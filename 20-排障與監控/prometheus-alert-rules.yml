@@ -1,0 +1,80 @@
+groups:
+  - name: game-backend
+    rules:
+      - alert: GameGCPressureHigh
+        expr: game_gc_cpu_fraction_5m > 0.25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: GC CPU 使用率偏高
+      - alert: GameMemoryPressureHigh
+        expr: game_heap_pressure_ratio > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Heap 記憶體壓力偏高
+      - alert: GameHighThreadCount
+        expr: go_threads > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Go thread 數量偏高
+      - alert: GameAsyncFailureDiscardDetected
+        expr: game_async_failure_discard_rate_5m > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: 非同步任務遭丟棄
+      - alert: GamePersistPoolDiscardDetected
+        expr: game_persist_pool_discard_rate_5m > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: 持久化任務遭丟棄
+      - alert: GameClockOffsetHigh
+        expr: abs(game_clock_offset_seconds) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 服務時鐘偏移過大
+      - alert: GameFrequentBackwardTimeSync
+        expr: game_time_sync_backward_rate_5m > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 時間回退同步頻率偏高
+      - alert: GameGoroutineLeakPossible
+        expr: game_goroutine_growth_rate > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Goroutine 增長速度偏高
+      - alert: GameLoginE2EP99High
+        expr: game_login_e2e_p99_seconds > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 登入端到端 P99 延遲偏高
+      - alert: GameSchedLatencyHigh
+        expr: game_sched_latency_p99_5m > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Go scheduler P99 延遲偏高
+      - alert: GameConnectionLeakPossible
+        expr: game_connection_leak_diff > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: TCP 與應用連線數不一致
