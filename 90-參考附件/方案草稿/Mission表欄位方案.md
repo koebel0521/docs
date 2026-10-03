@@ -1,8 +1,8 @@
-# Mission 表欄位方案
+# Mission 表欄位方案（舊版提案／僅供參考）
 
-## 文件狀態
+> **文件狀態：舊版提案，僅供參考。** 本文件是早期任務系統設計，尚未定案；欄位、型別、行為與架構可能已過時。不得視為現行規格、填表依據或直接實作依據；現行設計以後續確認文件為準。
 
-本文件是新任務系統的配置設計方案，**不代表 PJA-Server 或 PJA-Config 已實作**。欄位供後續新增 `Mission.xlsx`、Luban schema、Server 任務邏輯與玩家進度儲存時採用。
+本文件中的提案**不代表 PJA-Server 或 PJA-Config 已實作**。
 
 任務配置由 `Mission.xlsx` 定義任務規則；`Activity.xlsx` 以 `MissionIds` 指定活動期次包含的任務。活動任務順序以 `MissionIds` 陣列順序為準，`Mission.xlsx` 不設 `SortOrder`。
 
