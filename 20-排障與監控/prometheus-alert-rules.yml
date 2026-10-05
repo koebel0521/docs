@@ -78,3 +78,31 @@ groups:
           severity: warning
         annotations:
           summary: TCP 與應用連線數不一致
+      - alert: GameChatRoomMessageDropped
+        expr: increase(game_msg_queue_dropped_total{service="chat_room"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Chat 房間佇列已滿，訊息遭丟棄
+      - alert: GameChatRoomQueueBacklog
+        expr: game_chat_room_queue_pending > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Chat 房間佇列持續積壓
+      - alert: GameChatRoomJobWaitHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(game_chat_room_job_wait_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Chat 房間訊息排隊等待 P99 超過 1 秒
+      - alert: GameChatRoomJobSlow
+        expr: histogram_quantile(0.99, sum by (le) (rate(game_chat_room_job_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Chat 房間工作執行 P99 超過 1 秒，檢查 MySQL 延遲
