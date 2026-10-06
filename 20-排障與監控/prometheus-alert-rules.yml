@@ -1,4 +1,45 @@
 groups:
+  # 錄製規則：告警與 Grafana 面板引用的衍生指標，一律由程式輸出的原始指標計算。
+  # 失敗比例以「失敗 or 總量*0」補零，沒有失敗時得到 0 而不是無資料。
+  - name: game-backend-recording
+    rules:
+      - record: game_gc_cpu_fraction_5m
+        expr: sum by (job, instance) (rate(go_cpu_classes_gc_total_cpu_seconds_total[5m])) / sum by (job, instance) (rate(go_cpu_classes_total_cpu_seconds_total[5m]))
+      - record: game_heap_pressure_ratio
+        expr: go_memstats_heap_inuse_bytes / go_memstats_next_gc_bytes
+      - record: game_async_failure_discard_rate_5m
+        expr: sum by (job, instance) (rate(game_msg_queue_dropped_total{service!="chat_room"}[5m]) or rate(game_async_failure_total{outcome=~"retry_schedule_failed|dead_letter_failed"}[5m]))
+      - record: game_persist_pool_discard_rate_5m
+        expr: sum by (job, instance) (rate(game_persist_pool_discard_total[5m]))
+      - record: game_time_sync_backward_rate_5m
+        expr: sum by (job, instance) (increase(game_time_sync_adjustments_total{direction="backward"}[5m]))
+      - record: game_goroutine_growth_rate
+        expr: deriv(go_goroutines[5m])
+      - record: game_login_e2e_p99_seconds
+        expr: histogram_quantile(0.99, sum by (job, le) (rate(game_login_e2e_seconds_bucket[5m])))
+      - record: game_sched_latency_p99_5m
+        expr: histogram_quantile(0.99, sum by (job, instance, le) (rate(go_sched_latencies_seconds_bucket[5m])))
+      - record: game_connection_leak_diff
+        expr: sum by (job, instance) (tcp_connections_active{service="user"}) - sum by (job, instance) (game_connections{service="gate_user"})
+      - record: game_login_failure_ratio_5m
+        expr: (sum by (job) (rate(game_login_total{result=~"server_fail|save_fail|service_unavailable|unknown"}[5m])) or sum by (job) (rate(game_login_total[5m])) * 0) / sum by (job) (rate(game_login_total[5m]))
+      - record: game_login_availability_percent_5m
+        expr: 100 * (1 - game_login_failure_ratio_5m)
+      - record: game_logout_failure_ratio_5m
+        expr: (sum by (job) (rate(game_logout_total{result=~"server_fail|save_fail|service_unavailable|unknown"}[5m])) or sum by (job) (rate(game_logout_total[5m])) * 0) / sum by (job) (rate(game_logout_total[5m]))
+      - record: game_logout_availability_percent_5m
+        expr: 100 * (1 - game_logout_failure_ratio_5m)
+      - record: game_recovery_correctness_percent_10m
+        expr: 100 * (1 - (sum by (job) (rate(game_recovery_validation_total{result=~"recovery_mismatch|server_fail|unknown"}[10m])) or sum by (job) (rate(game_recovery_validation_total[10m])) * 0) / sum by (job) (rate(game_recovery_validation_total[10m])))
+      - record: tcp_reconnect_failure_ratio_5m
+        expr: (sum by (job) (rate(tcp_reconnect_total{result="fail"}[5m])) or sum by (job) (rate(tcp_reconnect_total[5m])) * 0) / sum by (job) (rate(tcp_reconnect_total[5m]))
+      - record: tcp_reconnect_success_percent_5m
+        expr: 100 * (1 - tcp_reconnect_failure_ratio_5m)
+      - record: game_handler_duration_p95_seconds
+        expr: histogram_quantile(0.95, sum by (job, handler, le) (rate(game_handler_duration_seconds_bucket[5m])))
+      - record: game_handler_duration_p99_seconds
+        expr: histogram_quantile(0.99, sum by (job, handler, le) (rate(game_handler_duration_seconds_bucket[5m])))
+
   - name: game-backend
     rules:
       - alert: GameGCPressureHigh

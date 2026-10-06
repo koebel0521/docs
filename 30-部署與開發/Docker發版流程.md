@@ -182,27 +182,7 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 - release note
 - deploy log
 
-## 9. GoReleaser 平行發版（GitHub Release）
-
-除了 Docker 映像檔發版，專案另有 GoReleaser 發版流程：
-
-- **觸發條件**：推送 `v*` tag 至 GitHub
-- **產物**：GitHub Release + 各平台 binary archive（tar.gz）+ checksum
-- **不含 Docker**：映像檔仍由 `scripts/docker-release.sh` 管理
-
-`.goreleaser.yml` 定義了 7 個服務（central / gate / world / user / lobby / chat / record）的 cross-compile 設定。
-
-### 使用方式
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-# GitHub Actions 自動建立 Release + binary artifacts
-```
-
-之後可從 GitHub Releases 頁面下載 binary，或繼續用 Docker 發版流程。
-
-## 10. 不建議的做法
+## 9. 不建議的做法
 
 - 直接部署 `latest`
 - 不記錄 commit 與 image tag 對應
