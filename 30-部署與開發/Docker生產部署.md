@@ -77,7 +77,8 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - RabbitMQ 傳遞 World 的任務事件（道具使用、經過起點），設定含這類任務時 World 沒有 RabbitMQ 會拒絕啟動。正式 compose 內含 `rabbitmq` 服務，只在內部網路提供；World 以 `RABBITMQ_URL` 連線，設定檔的 `rabbitmq.url` 留空。
 - 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
-- 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網並疊加 `compose.s2s-auth.yml` 啟用 S2S 驗證。
+- 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
+- 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/` 分別唯讀掛載到各服務的 `/run/secrets`；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
 - 正式環境不傳 `FAULT_INJECT`；`go run ./tools/configaudit` 會檢查。
 
 ### 環境變數：AUTO_MIGRATE_DISABLED

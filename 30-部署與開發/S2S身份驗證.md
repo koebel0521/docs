@@ -13,18 +13,18 @@
 
 接收端授權檔只保存 `sha256:` 加上 64 位十六進位 SHA-256 摘要。呼叫端持有原始 token，透過 TLS 傳送；接收端計算摘要並固定時間比較。摘要不能直接當作 bearer token 登入。
 
-預設 `s2s_auth.enabled: false`，維持開發流程。啟用時 Central、Gate、World、Chat 都必須設定 `s2s_auth.enabled: true`，或 `S2S_AUTH_ENABLED=true`。已啟用程序須具備所有必要連線機密；Gate 僅在設定 Chat dial 時要求 Chat token。驗證失敗不退回明文，錯誤開關值、缺失機密或明文授權清單會回傳啟動錯誤。
+`config/dev`、`config/docker` 預設 `s2s_auth.enabled: false`，維持開發流程；正式設定 `docker/prod/config` 一律啟用，機密由 `.env.prod` 的 `S2S_SECRET_DIR` 掛載。啟用時 Central、Gate、World、Chat 都必須設定 `s2s_auth.enabled: true`，或 `S2S_AUTH_ENABLED=true`。已啟用程序須具備所有必要連線機密；Gate 僅在設定 Chat dial 時要求 Chat token。驗證失敗不退回明文，錯誤開關值、缺失機密或明文授權清單會回傳啟動錯誤。
 
 ## 連線規則
 
 1. TLS 1.3 與 token 驗證共用五秒截止時間；通過才建立遊戲 socket。
-2. 每個接收端程序、每種角色的一個節點 ID，只能有一條有效連線。重複登入拒絕新連線、保留舊連線；清理尚未完成也拒絕重連。
+2. 每個接收端程序、每種角色的一個節點 ID，只能有一條有效連線。同一節點以有效憑證重新連線時，新連線取代並關閉舊連線（舊連線多半是對端重啟後留下的半開連線）；舊連線的清理只釋放自己的保留，不影響新連線。
 3. socket ID 由驗證結果設定；ConnectInfo 不得改成其他身份。登入、同步、恢復驗證及 World 轉送的來源身份也必須符合連線。
 4. 斷線等待正在執行的訊息、移除 socket 並完成斷線清理後，才釋放節點 ID；舊連線的排隊訊息會丟棄。驗證客戶端同樣阻擋舊連線訊息。
 5. 每份清單禁止不同節點共用 token；日誌不顯示 token。
 6. 接收端每秒檢查授權檔內容摘要，兼容 Docker／跨系統目錄掛載；不合法更新保留舊設定。撤銷或 token 改變時，關閉受影響節點的連線，其他節點不受影響。`{}` 撤銷該清單全部節點，`null` 不合法。
 
-同一 Gate 可同時連到 Central、World、Chat。單連線限制作用於各接收端程序；多程序叢集的全域排他需共享租約。網路斷線尚未偵測時，新連線須等待既有 heartbeat/read timeout 清理。token 外洩時，先連入者仍可能冒充節點。
+同一 Gate 可同時連到 Central、World、Chat。單連線限制作用於各接收端程序；多程序叢集的全域排他需共享租約。網路斷線尚未偵測時，持有有效 token 的新連線會直接取代舊連線；服務間讀取逾時為三個心跳週期（3 分鐘），沒有重連的半開連線也會在此期間清理。token 外洩時，攻擊者可以搶佔節點的連線，需立即輪替 token。
 
 接收端清單外洩不會直接取得可登入的原始 token；每目的服務隔離也讓 Chat 的 token 無法登入 Central 或 World。Gate 主機被入侵時，其三組原始 token 仍可能外洩；接收端主機被入侵時，也可能攔截後續送到它的 token。此方案仍需要 TLS、主機權限與安全亂數。
 
