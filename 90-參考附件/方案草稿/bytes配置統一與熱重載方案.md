@@ -250,13 +250,13 @@ Manifest 增加：
 }
 ```
 
-Server binary 嵌入 expected schema hash。reload 前必須確認：
+Server binary 嵌入 expected schema hash：以 `pkg/dataconfig/generated/*.go` 全部生成檔（依檔名排序，換行統一成 LF）計算，bean 欄位增刪也會改變 hash。reload 前必須確認：
 
 ```text
 artifact.schema_hash == server.expected_schema_hash
 ```
 
-不相容時拒絕 reload，要求部署新版 server binary。
+不相容時拒絕 reload，要求部署新版 server binary。schema hash 的計算方式改變時（例如 2026-10 起涵蓋所有生成檔），既有 release 一律視為不相容，部署新版後要以新版 `configartifact` 重新發布設定。
 
 ## 5.4 Config 版本與 Client 相容性
 
