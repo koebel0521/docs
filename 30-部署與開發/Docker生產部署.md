@@ -57,8 +57,19 @@ graph LR
 - `RECORD_IMAGE`
 - `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`）
 - `LOBBY_ADMIN_TOKEN`／`LOBBY_OPS_TOKEN`／`LOBBY_GM_TOKEN`（需要 Lobby admin 端點時）
+- `DATA_CONFIG_ROOT`：宿主機上的遊戲設定 artifact root（`current.json` 與 `releases/`），以唯讀方式掛到 World 的 `/app/config/data`
 
 不要把真正的 `.env.prod` 提交到版本庫。
+
+### 遊戲設定 artifact
+
+World 啟動時要求 `current.json`，正式環境不得開啟 `data_config.allow_legacy_directory`。部署前先在宿主機發布 artifact：
+
+```powershell
+.\scripts\publish-data-config.ps1 -Source config\data -Root <DATA_CONFIG_ROOT>
+```
+
+World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更，不改寫 `current.json`。熱重載被拒時 World 保留目前快照並記錄 `game_data_config_reload_total{result="rejected"}`，但 `current.json` 仍指向被拒的版本，World 重啟會改載入該版本；先以 `rollback-data-config-release.ps1` 切回可用版本，或依[配置 Artifact 發布與回退](配置Artifact發布與回退.md)完成需要重啟的變更。
 
 ### 機密與對外連接埠
 
@@ -124,6 +135,7 @@ REGISTRY=registry.github.com/koebel0521/project IMAGE_TAG=1.0.0 ./scripts/docker
 - `docker/compose/compose.prod.yml`
 - `docker/prod/config/*.yaml`
 - `.env.prod`
+- `DATA_CONFIG_ROOT` 指向的遊戲設定 artifact root
 
 啟動應用：
 
