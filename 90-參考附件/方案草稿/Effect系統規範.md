@@ -81,15 +81,18 @@ Effect runtime 提供以下操作：
 - `Quantifier`: `Point` 或 `Percent`
 - `Color`: 顯示或分類資料，Effect 核心不解讀它
 
-MVP 僅支援加減型數值 Effect，固定公式如下：
+MVP 僅支援加減型數值 Effect。`Contribution.Value` 以 1/100 為單位保存（`effect.ValueScale = 100`），設定表的 `1` 存成 `100`、`0.1` 存成 `10`；超過兩位小數的設定值在載入時拒絕。固定公式如下：
 
 ```text
-pointDelta   = Σ signed(Point contributions)
-percentDelta = Σ signed(Percent contributions)
-result       = (base + pointDelta) * (100 + percentDelta) / 100
+pointDelta   = Σ signed(Point contributions)        // 單位 1/100 點
+percentDelta = Σ signed(Percent contributions)      // 單位 1/100 %
+pointResult  = (base * 100 + pointDelta) / 100
+percentResult = base * (10000 + percentDelta) / 10000
 ```
 
-整數除法採 Go 的截斷規則。Effect 核心不自行 clamp；由擁有該數值的業務系統在結果後套用自己的上下限。
+所有來源先以定點數累加，最後才做一次整數除法，避免建築 0.1 這類小數各自截成 0。整數除法採 Go 的向零截斷規則。`player_effects.value` 保存的也是 1/100 單位。
+
+Effect 核心不自行 clamp；由擁有該數值的業務系統在結果後套用自己的上下限，例如盤面效果的工廠成本最低 0、步數最低 1。
 
 設定中的 `Operator = Null` 不是數值聚合規則。現有 `ShopGroup` 即屬此類，MVP 不得把它當成 `Plus`、`Minus` 或任意覆蓋值。要啟用這類規則前，先在 PJA-Config 增加明確的 `StackMode` 與 `Priority`，再實作對應的 selector resolver。
 
