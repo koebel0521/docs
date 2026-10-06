@@ -114,7 +114,7 @@ Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分�
 ## 2. 建 image
 
 ```bash
-REGISTRY=registry.github.com/koebel0521/project IMAGE_TAG=1.0.0 ./scripts/docker-build-images.sh
+REGISTRY=registry.example.com/project IMAGE_TAG=1.0.0 ./scripts/docker-build-images.sh
 ```
 
 這會 build：
@@ -126,7 +126,7 @@ REGISTRY=registry.github.com/koebel0521/project IMAGE_TAG=1.0.0 ./scripts/docker
 ## 3. 推 image
 
 ```bash
-REGISTRY=registry.github.com/koebel0521/project IMAGE_TAG=1.0.0 ./scripts/docker-push-images.sh
+REGISTRY=registry.example.com/project IMAGE_TAG=1.0.0 ./scripts/docker-push-images.sh
 ```
 
 ## 4. 部署

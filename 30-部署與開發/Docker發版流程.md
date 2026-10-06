@@ -54,13 +54,13 @@
 可直接執行：
 
 ```bash
-./scripts/docker-release.sh 1.0.0 registry.github.com/koebel0521/project
+./scripts/docker-release.sh 1.0.0 registry.example.com/project
 ```
 
 或直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerrelease -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.github.com/koebel0521/project
+powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerrelease -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
 ```
 
 若只是先產審批 stamp，也可以先跑：
@@ -79,8 +79,8 @@ powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode chan
 若只想分開跑，也可以直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerbuild -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.github.com/koebel0521/project
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerpush -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.github.com/koebel0521/project
+powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerbuild -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
+powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerpush -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
 ```
 
 ## 4. deploy 主機更新內容
@@ -97,9 +97,9 @@ release 完成後，deploy 主機至少要更新：
 
 ```text
 IMAGE_TAG=1.0.0
-CENTRAL_IMAGE=registry.github.com/koebel0521/project/project-central:1.0.0
-WORLD_IMAGE=registry.github.com/koebel0521/project/project-world:1.0.0
-GATE_IMAGE=registry.github.com/koebel0521/project/project-gate:1.0.0
+CENTRAL_IMAGE=registry.example.com/project/project-central:1.0.0
+WORLD_IMAGE=registry.example.com/project/project-world:1.0.0
+GATE_IMAGE=registry.example.com/project/project-gate:1.0.0
 ```
 
 同時建議把下列 trace 一起留存：
@@ -149,9 +149,9 @@ rollback 範例：
 
 ```text
 IMAGE_TAG=0.9.9
-CENTRAL_IMAGE=registry.github.com/koebel0521/project/project-central:0.9.9
-WORLD_IMAGE=registry.github.com/koebel0521/project/project-world:0.9.9
-GATE_IMAGE=registry.github.com/koebel0521/project/project-gate:0.9.9
+CENTRAL_IMAGE=registry.example.com/project/project-central:0.9.9
+WORLD_IMAGE=registry.example.com/project/project-world:0.9.9
+GATE_IMAGE=registry.example.com/project/project-gate:0.9.9
 ```
 
 然後再跑：
