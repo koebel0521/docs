@@ -52,8 +52,19 @@ graph LR
 - `CENTRAL_IMAGE`
 - `WORLD_IMAGE`
 - `GATE_IMAGE`
+- `CHAT_IMAGE`
+- `LOBBY_IMAGE`
+- `LOBBY_ADMIN_TOKEN`／`LOBBY_OPS_TOKEN`／`LOBBY_GM_TOKEN`（需要 Lobby admin 端點時）
 
 不要把真正的 `.env.prod` 提交到版本庫。
+
+### 機密與對外連接埠
+
+- MySQL 帳密只由環境變數提供：compose 把 `MYSQL_USER`／`MYSQL_PASSWORD`／`MYSQL_DATABASE` 以 `MYSQL_USERNAME`／`MYSQL_PASSWORD`／`MYSQL_DBNAME` 注入 Central、World、Chat，設定檔的 `mysql.password` 留空。
+- 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
+- Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
+- 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網並疊加 `compose.s2s-auth.yml` 啟用 S2S 驗證。
+- 正式環境不傳 `FAULT_INJECT`；`go run ./tools/configaudit` 會檢查。
 
 ### 環境變數：AUTO_MIGRATE_DISABLED
 
