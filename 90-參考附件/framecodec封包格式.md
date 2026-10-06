@@ -58,7 +58,7 @@ frame  = 06 00 00 00  D5 07
          （小端序 uint32）  （小端序 uint16）
 ```
 
-再以 `payload = "hello"`（5 位元組）為例（對應 `ExampleBuildFrame`）：
+再以 `payload = "hello"`（5 位元組）為例（對應 `ExampleCoder_WriteFrame`）：
 
 ```
 frame  = 0B 00 00 00  96 75  68 65 6C 6C 6F
@@ -84,10 +84,8 @@ TCP 是串流，一次 `Read` 不一定剛好拿到一個完整 frame，需自�
 
 | API | 用途 |
 |-----|------|
-| `BuildFrame(msgID, payload, frame)` | 組出一個完整 frame（可傳入既有 buffer 重用） |
-| `Coder.Encode(msgID, payload)` | 組 frame，等價於 `BuildFrame` |
-| `Coder.EncodePooled(msgID, payload)` | 組 frame 並回傳釋放函式（由物件池管理） |
-| `Coder.WriteFrame(w, msgID, payload)` | 直接寫入 `io.Writer` |
+| `Coder.WriteFrame(w, msgID, payload)` | 組出 frame 並以一次 `Write` 寫入 `io.Writer` |
+| `Coder.WriteFramePrebuilt(w, msgID, frame)` | frame 已預留 header 時只填 header 後寫出（Socket 傳送路徑使用） |
 | `Coder.Decode(reader, buf)` | 從 reader 讀出一個 frame，回傳 `msgID` 與 `payload` |
 | `Coder.DecodePooled(reader)` | 物件池版本解碼 |
 
