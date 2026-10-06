@@ -45,7 +45,7 @@ TCP runtime 相關套件負責：
 2. `Client.Start()` 依設定讀出 dial address 列表並正規化順序
 3. 只維持一條 `dialLoop()`
 4. 連上後建立 `Socket`
-5. socket 中斷時依 `ReconnectStrategy` 重連，失敗時切到下一個候選位址
+5. socket 中斷時依 `backoff.BackOff`（指數退避，含 jitter） 重連，失敗時切到下一個候選位址
 6. `Close()` 後會停止後續重連
 
 ## `tcpserver`

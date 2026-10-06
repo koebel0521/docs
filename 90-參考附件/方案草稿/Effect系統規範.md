@@ -35,7 +35,7 @@ type Source struct {
 }
 
 type Contribution struct {
-	EffectId  effect.ID
+	EffectId  SharedEffectID
 	Value     int64
 	ExpiresAt *time.Time
 }
@@ -44,7 +44,7 @@ type Instance struct {
 	Id        uint64
 	OwnerId   uint64
 	Source    Source
-	EffectId  effect.ID
+	EffectId  SharedEffectID
 	Value     int64
 	ExpiresAt *time.Time
 }
