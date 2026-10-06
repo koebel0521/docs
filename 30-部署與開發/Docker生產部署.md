@@ -54,6 +54,7 @@ graph LR
 - `GATE_IMAGE`
 - `CHAT_IMAGE`
 - `LOBBY_IMAGE`
+- `RECORD_IMAGE`
 - `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`）
 - `LOBBY_ADMIN_TOKEN`／`LOBBY_OPS_TOKEN`／`LOBBY_GM_TOKEN`（需要 Lobby admin 端點時）
 
@@ -83,7 +84,7 @@ AUTO_MIGRATE_DISABLED=true
 - `Chat` → `chat_messages` 表
 - `World` → `player_item` 表
 
-Record 服務的日表預先建立在啟動時獨立進行，不受此變數影響。
+Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，它只會建立自己的事件分表。
 
 ### 連線池設定
 
