@@ -70,7 +70,7 @@ docker compose -f docker/compose/compose.full.yml ps
 - Central world TCP: `localhost:60001`
 - Central gate TCP: `localhost:60002`
 - World gate TCP: `localhost:61001`
-- Record HTTP: `localhost:6070`
+- Record HTTP: `localhost:6070`（查詢需帶 `Authorization: Bearer dev-record-token`，見 `config/docker/record.yaml`）
 - RabbitMQ AMQP: `localhost:5672`
 - RabbitMQ UI: [http://localhost:15672](http://localhost:15672)
 - Grafana: [http://localhost:3000](http://localhost:3000)
@@ -82,7 +82,7 @@ docker compose -f docker/compose/compose.full.yml ps
 - Central world TCP: `localhost:16001`
 - Central gate TCP: `localhost:16002`
 - World gate TCP: `localhost:16101`
-- Record HTTP: `localhost:6070`
+- Record HTTP: `localhost:26070`（同樣需帶 `Authorization: Bearer dev-record-token`）
 - RabbitMQ AMQP: `localhost:5672`
 - RabbitMQ UI: [http://localhost:15672](http://localhost:15672)
 - Lobby HTTP: `localhost:18080`
