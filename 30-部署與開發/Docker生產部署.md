@@ -114,6 +114,9 @@ ALTER TABLE combat_session MODIFY status varchar(32) NOT NULL;
 CREATE INDEX idx_combat_session_attacker_status ON combat_session (attacker_player_id, status, expires_at);
 CREATE INDEX idx_combat_session_defender_status ON combat_session (defender_player_id, status, expires_at);
 
+-- World：任務新增本週期完成次數（週期重置任務的 MaxCompletion 以此計）
+ALTER TABLE player_mission_state ADD COLUMN period_completion_count int NOT NULL DEFAULT 0;
+
 -- Central：帳號改為精確比對（區分大小寫與重音）
 ALTER TABLE `user` MODIFY `account` varchar(100) COLLATE utf8mb4_bin NOT NULL;
 ```
