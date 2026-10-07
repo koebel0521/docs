@@ -46,6 +46,7 @@ graph LR
 
 - `MYSQL_ROOT_PASSWORD`
 - `MYSQL_PASSWORD`
+- `REDIS_PASSWORD`：正式 Redis 以 `requirepass` 啟動，Central、World、Gate、Lobby 以 `redis.password` 讀取；未設定時 compose 直接報錯
 - `GRAFANA_ADMIN_PASSWORD`
 - `REGISTRY`
 - `IMAGE_TAG`
@@ -80,6 +81,8 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
 - 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/` 分別唯讀掛載到各服務的 `/run/secrets`；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
 - 正式環境不傳 `FAULT_INJECT`；`go run ./tools/configaudit` 會檢查。
+- 告警通知：`monitoring` profile 含 Alertmanager，告警送往 `ALERTMANAGER_SECRET_DIR`（預設 `./alertmanager-secrets`，相對於 compose 檔目錄）下 `webhook_url` 檔案內的 URL（單行，例如團隊聊天室或值班系統的接收端）。目錄或檔案不存在時告警只會留在 Alertmanager 介面（`127.0.0.1:9093`），不會通知任何人；該目錄已列入 `.gitignore`。
+- Prometheus 時序資料放在具名資料卷 `prod-prometheus-data`，重建容器不會清空；保留期由 `PROMETHEUS_RETENTION` 控制（預設 `15d`）。
 
 ### 環境變數：AUTO_MIGRATE_DISABLED
 
