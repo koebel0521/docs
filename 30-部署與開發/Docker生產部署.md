@@ -101,6 +101,26 @@ AUTO_MIGRATE_DISABLED=true
 
 Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，它只會建立自己的事件分表。
 
+#### 升級時需手動建立的索引與欄位變更
+
+`AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列 2026-10 新增的結構需在升級前由外部 migration 建立（PJA-Database 尚無 plan，暫以 SQL 手動執行）：
+
+```sql
+-- Chat：歷史保留清理依 created_at 掃描
+CREATE INDEX idx_chat_message_created_at ON chat_message (created_at);
+
+-- World：combat_session 依玩家、狀態與到期時間查詢；status 需先改成 varchar(32) 才能建索引
+ALTER TABLE combat_session MODIFY status varchar(32) NOT NULL;
+CREATE INDEX idx_combat_session_attacker_status ON combat_session (attacker_player_id, status, expires_at);
+CREATE INDEX idx_combat_session_defender_status ON combat_session (defender_player_id, status, expires_at);
+
+-- Central：帳號改為精確比對（區分大小寫與重音）
+ALTER TABLE `user` MODIFY `account` varchar(100) COLLATE utf8mb4_bin NOT NULL;
+```
+
+大表建索引會鎖表時間較長，請在離峰執行；`combat_session` 目前沒有刪除流程，保留期限待決定。
+
+
 ### 連線池設定
 
 各服務的 MySQL 連線池採用以下預設值，可透過設定檔覆寫：
