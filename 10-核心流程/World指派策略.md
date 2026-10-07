@@ -13,7 +13,7 @@ Central 在處理 `LoginGateToCentral` 時，根據玩家是否已有帳號記�
 
 ### 最少負載優先（leastLoadedWorldAssigner）
 
-這是目前的預設策略，定義於 `cmd/central/internal/handler/gate/world_assigner.go`。
+這是目前的預設策略，定義於 `cmd/central/internal/flow/login/world_assigner.go`。
 
 流程：
 
