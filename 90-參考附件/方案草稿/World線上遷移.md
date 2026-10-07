@@ -23,7 +23,7 @@ World 是有狀態節點（記憶體玩家態 + channels）。
 | Central 已有 World drain 機制：`SADD central:world:drain 1001` 後新玩家不再派入 | `cmd/central/internal/app/world_drain.go`、`world_selection.go` |
 | Central 路由有三處：memory（`users/usersByWorld`）、Redis 路由表、MySQL `user.world_id` | `cmd/central/internal/app/user_routing_*` |
 | Client 訊息 ID 使用 PJA-Protocol canonical ledger；S2S 訊息 ID 由 Server 維護：Auth 30001-30011、System 30101-30104、Control 30301-30302、Audit 30401-30402 | `PJA-Protocol/Datas/__enums__.xlsx`、`PJA-Server/pkg/protocol/s2s_message_id.go` |
-| 冪等基礎設施：`request_id` journal（scope 去重/回放） | `pkg/requestjournal` |
+| 冪等基礎設施：`request_id` journal（scope 去重/回放） | `pkg/requestjournalredis` |
 
 **核心洞察**：玩家消息在 Gate 依 `user.WorldID` 轉發。只要在正確的同步屏障下把
 「Gate 的 WorldID、Central 路由、MySQL 持久 world_id、兩個 World 的記憶體態」一致地切到新節點，
