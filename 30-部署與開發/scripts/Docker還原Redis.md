@@ -7,13 +7,17 @@
 在清掉壞資料後，快速把 volume 還原回來。
 
 ## 流程
-1. 停掉 Redis。
-2. 用 `busybox` 把 tar.gz 解回 volume。
-3. 再把 Redis 起回來。
+1. 沒有設 `CONFIRM_RESTORE=yes` 就拒絕執行。
+2. 確認 tar.gz 能完整讀出且不是空包。
+3. 停掉 Redis。
+4. 用 `busybox` 把 tar.gz 解到 volume 內的暫存目錄，舊資料移到 `.restore-old` 後才換入新資料。
+5. 再把 Redis 起回來。
+
+volume 內已有上次失敗留下的 `.restore-old` 時腳本會拒絕繼續，那可能是唯一的舊資料，請先確認再手動處理。
 
 ## 主要參數
 - 第一個位置參數：`redis-backup.tar.gz`
-- 透過環境變數控制：`ENV_FILE`、`COMPOSE_FILE`、`VOLUME_NAME`
+- 透過環境變數控制：`ENV_FILE`、`COMPOSE_FILE`、`VOLUME_NAME`、`CONFIRM_RESTORE`（必須為 `yes`）
 
 ## 相關文件
 - [Docker備份Redis](./Docker備份Redis.md)

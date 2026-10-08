@@ -36,7 +36,7 @@ ENV_FILE=.env.prod BACKUP_DIR=/srv/backups/mysql ./scripts/docker-backup-mysql.s
 ## MySQL 還原
 
 ```bash
-./scripts/docker-restore-mysql.sh backups/mysql/mysql-20260324-120000.sql.gz
+CONFIRM_RESTORE=yes ./scripts/docker-restore-mysql.sh backups/mysql/mysql-20260324-120000.sql.gz
 ```
 
 或直接走統一入口：
@@ -47,7 +47,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dock
 
 注意：
 
-- 這會直接把 dump 匯回 `MYSQL_DATABASE`
+- 這會直接把 dump 匯回 `MYSQL_DATABASE`；沒有 `CONFIRM_RESTORE=yes` 腳本拒絕執行，還原前會先備份現況
 - 還原前應先確認目標環境是否允許覆寫資料
 - 最好先在 staging 演練一次
 
@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dock
 ## Redis 還原
 
 ```bash
-./scripts/docker-restore-redis.sh backups/redis/redis-20260324-120000.tar.gz
+CONFIRM_RESTORE=yes ./scripts/docker-restore-redis.sh backups/redis/redis-20260324-120000.tar.gz
 ```
 
 或直接走統一入口：
