@@ -57,8 +57,8 @@
 
 | Key 前綴 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-| `requestjournal:central:login` | String | Central | 2 min（`LoginRequestCacheTTL`） | 登入請求去重（scope 為帳號；各 Central 共用） |
-| `requestjournal:central:logout` | String | Central | 2 min（`LogoutRequestCacheTTL`） | 登出請求去重（各 Central 共用） |
+| `requestjournal:central:login` | String | Central | 2 min（`loginRequestCacheTTL`） | 登入請求去重（scope 為帳號；各 Central 共用） |
+| `requestjournal:central:logout` | String | Central | 2 min（`logoutRequestCacheTTL`） | 登出請求去重（各 Central 共用） |
 | `requestjournal:gate:{gateID}:validate` | String | Gate | 2 min（`ValidationReplayCacheTTL`） | 恢復驗證請求去重 |
 | `requestjournal:world:{worldID}:login` | String | World | 2 min（`RequestReplayCacheTTL`） | 登入請求去重 |
 | `requestjournal:world:{worldID}:logout` | String | World | 2 min | 登出請求去重 |
