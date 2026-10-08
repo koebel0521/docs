@@ -45,7 +45,7 @@
 |----------|------|-------|-----|------|
 | `central:routing:{playerID}` | Hash | Central | 24 小時（`RoutingTTL`，寫入刷新；登出刪除） | 路由表：欄位 `gate`、`world`、`account` |
 | `central:account:{account}` | Hash | Central | 7 天（`AccountCacheTTL`） | 帳號快取：欄位 `uid`、`wid`、`hash`（passwordHash） |
-| `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token |
+| `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token。登入取鎖後以 `LoginAccountLockHold`（`redisLockTTL` 減 5 秒）作為處理期限，逾時即中止，不讓鎖在流程中途過期 |
 | `central:world:drain` | Set | Lobby (admin) | 排空期間 | 排空中的 World ID 集合 |
 | `central:audit:record:{playerID}` | String | Central | 10 分鐘（`auditRecordCacheTTL`） | audit 快取記錄 |
 
