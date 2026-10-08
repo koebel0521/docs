@@ -18,7 +18,7 @@ Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，�
 
 - 每筆發布各自取得 `DeferredConfirmation`：發布鎖只涵蓋送出呼叫，等待 confirm 時已放開，多筆事件可同時等待 broker 確認；單筆最多等 5 秒，逾時視為失敗。連線中斷時發布端在背景重連。
 - 一般事件（`App.PublishRecord`）走 `AsyncPublisher`：事件先進記憶體佇列（World 預設 100 筆），由背景 goroutine 逐筆發布並等待 confirm。佇列滿或發布失敗只記 Warn，事件丟棄，不影響遊戲主流程。關機時先排空佇列，關機期限到了就放棄剩餘事件。
-- 必須送達的事件（經濟、道具等）走 MySQL record outbox：與遊戲異動在同一個交易寫入 outbox，由 relay 以 `PublishSync` 逐筆發布並等待 confirm，成功才標記已送出；失敗留在 outbox 依退避時間重試，超過重試上限標記 `dead_lettered_at`，由 `cmd/world/tools/outboxreplay` 檢查後重送。
+- 必須送達的事件（經濟、道具等）走 MySQL record outbox：與遊戲異動在同一個交易寫入 outbox，由 relay 以 `PublishSync` 逐筆發布並等待 confirm，成功才標記已送出；失敗留在 outbox 依退避時間重試，超過重試上限標記 `dead_lettered_at`，由 `cmd/world/tools/outboxreplay` 檢查後重送。沒有設定 record sink（RabbitMQ 發布者）時不啟動 relay 並記錄警告，outbox 列原樣保留，不會因為發布一律失敗而被燒進死信。
 - 去重：outbox 事件以 operation ID 作為 `event_id`，`occurred_at` 固定為 outbox 列的建立時間，重送跨日時仍落在同一張 Record 日表；Record 寫入時以 `event_id` 去重。
 
 ## 消費端重試
