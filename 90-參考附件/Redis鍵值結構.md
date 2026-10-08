@@ -8,7 +8,7 @@
 |----------|------|-------|-----|------|
 | `lobby:gate:{gateID}` | Hash | Gate | 25s（`keyTTL`，每次回報刷新） | Gate 地址與負載 |
 | `lobby:central:{centralID}` | Hash | Central | 25s（`keyTTL`） | Central 地址 |
-| `lobby:world:{worldID}` | Hash | World | 25s（`keyTTL`） | World 地址與容量 |
+| `lobby:world:{worldID}` | Hash | World | 25s（`keyTTL`） | World 地址與容量；World 在載入設定、遷移並啟動服務之後才開始公告 |
 | `lobby:gates`、`lobby:centrals`、`lobby:worlds` | Set | 各服務 | 無 | 各類服務的 ID 索引（`IndexKey`），成員為服務 ID；服務停止時移除 |
 
 ## `player:*` / `world:*` — 玩家狀態（playerstoreredis）
