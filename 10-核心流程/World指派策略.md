@@ -18,9 +18,9 @@ Central 在處理 `LoginGateToCentral` 時，根據玩家是否已有帳號記�
 流程：
 
 1. 呼叫 `App.LeastLoadedWorldID()`，遍歷所有已連線的 World，選擇 `usersByWorld[worldID]` 數量最少的。
-2. 會先跳過正在 drain，或剛恢復仍在 `WorldRouteCooldown` 冷卻窗內的 World。
+2. 會先跳過正在 drain，或剛恢復仍在 `worldRouteCooldown` 冷卻窗內的 World。
 3. 若該 World 的 socket 仍然存活，直接使用。
-4. 若 socket 已斷線（返回 nil），fallback 到隨機選擇（`GetRandom()`）。
+4. 沒有可選 World（全部排空、冷卻、未連線，或 socket 已斷線）時回傳 nil，Central 拒絕這次新登入／新註冊並回可重試的 `AuthServiceUnavailable`（不快取，Gate 以同一 `RequestID` 重試會重新選 World）。不再退回隨機，避免新玩家被導向排空中的 World；既有玩家依已存路由重登，不經過這個選擇器。
 
 ```
 LeastLoadedWorldID()
@@ -28,11 +28,6 @@ LeastLoadedWorldID()
 ├── 比較 len(usersByWorld[worldID])
 └── 回傳玩家數最少的 WorldID（無連線則回傳 0）
 ```
-
-### 隨機選擇（randomWorldAssigner）
-
-Fallback 策略，當 `leastLoadedWorldAssigner` 不可用或最佳 World 已斷線時使用。
-直接呼叫 `worldSvc.GetRandom()` 隨機取一個已連線的 World socket。
 
 ## 限制與已知問題
 
@@ -60,7 +55,7 @@ Fallback 策略，當 `leastLoadedWorldAssigner` 不可用或最佳 World 已斷
 
 ### 4. 剛恢復的 World 會先冷卻
 
-剛重新連線的 World 會先進 `WorldRouteCooldown`，避免恢復瞬間立刻吃新流量。
+剛重新連線的 World 會先進 `worldRouteCooldown`，避免恢復瞬間立刻吃新流量。
 這樣可以先觀察節點是否穩定，再慢慢放量。
 
 ### 5. 單一 Central 視角
