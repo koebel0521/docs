@@ -102,3 +102,7 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
 - `topology migration ...`：缺少 mapping、mapping 目標不存在，或玩家版本無法到達目前版本。
 - `Player topology version verification failed`：先初始化 baseline 或完成離線搬遷。
 - cleanup 拒絕：不要手動刪目錄，先處理仍在 lineage 或仍被資料引用的版本。
+
+## 7. 相關環境變數
+
+- `DATA_CONFIG_VERSION_PATH`：啟動時記錄設定版本用的 `version.json` 路徑，未設定時看工作目錄下的 `config/data/version.json`。檔案不存在只記警告，檔案存在但內容損壞會擋住啟動。
