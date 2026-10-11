@@ -119,6 +119,12 @@ ALTER TABLE player_mission_state ADD COLUMN period_completion_count int NOT NULL
 
 -- Central：帳號改為精確比對（區分大小寫與重音）
 ALTER TABLE `user` MODIFY `account` varchar(100) COLLATE utf8mb4_bin NOT NULL;
+
+-- World：盤面子表不再有指向 player_board_state 的外鍵（改應用層一致性）；僅既有庫需要，新庫不會建立。
+-- 約束名稱依序為 fk_player_board_road_star_board、fk_player_board_building_board；不要動索引，主鍵即查詢用索引。
+-- 先以 SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'player_board_road_star' AND CONSTRAINT_TYPE = 'FOREIGN KEY' 確認名稱，不存在就略過。
+ALTER TABLE player_board_road_star DROP FOREIGN KEY fk_player_board_road_star_board;
+ALTER TABLE player_board_building DROP FOREIGN KEY fk_player_board_building_board;
 ```
 
 大表建索引會鎖表時間較長，請在離峰執行；`combat_session` 目前沒有刪除流程，保留期限待決定。
