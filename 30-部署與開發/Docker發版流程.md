@@ -31,19 +31,19 @@
 - `project-gate:<tag>`
 - 對應 commit id
 - deploy 時使用的 `.env.prod` 版本紀錄
-- release manifest（server commit/image、database schema/migrations、Luban config、protocol、fixtures）
+- `pkg/release/release.json`（發版名稱、server commit、協定版號與 schema 指紋、設定版本與序號、設定契約、database schema；建置時嵌入每個服務，格式見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md)）
 - migration plan checksum 與 schema migration 狀態
 
 ## 3. 建議 release 步驟
 
 ### 手動步驟
 
-1. 決定版本號並完成 `release/<tag>.yaml`
-2. 以 manifest 驗證 server/config/schema/protocol 對應
+1. 決定版本號；`go run ./tools/releasemanifest generate -release <tag> -commit <SHA>` 依實際產物寫出 `release.json`
+2. `go run ./tools/releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`
 3. build image
 4. push image
 5. 完成 MySQL backup / snapshot
-6. 執行一次性的 `../PJA-Database/scripts/migrate-prod.sh`
+6. 執行一次性的 `deps/PJA-Database/scripts/migrate-prod.sh`
 7. 確認 migration 成功後更新 deploy 主機上的 `.env.prod`
 8. 執行 production deploy
 9. 跑 production smoke test

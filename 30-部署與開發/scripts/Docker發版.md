@@ -9,8 +9,9 @@
 ## 流程
 1. 檢查 upgrade window lock。
 2. 檢查 change approval stamp。
-3. 跑 `docker-build-images.sh` 與 `docker-push-images.sh`。
-4. 寫 release trace 檔。
+3. 以 `tools/releasemanifest` 產生並驗證 `pkg/release/release.json`（結束後還原開發版）。
+4. 跑 `docker-build-images.sh` 與 `docker-push-images.sh`。
+5. 寫 release trace 檔與 `.run/release/<tag>.release.json`。
 
 ## 主要參數
 - 第一個位置參數：`image-tag`
