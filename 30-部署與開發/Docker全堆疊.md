@@ -61,7 +61,7 @@ docker compose -f docker/compose/compose.full.yml ps
 正常情況下應至少看到：
 
 - `mysql` / `redis` 為 `healthy`
-- `central` / `world` / `record` / `gate` / `user` / `rabbitmq` 為 `healthy`
+- `central` / `world` / `chat` / `record` / `gate` / `lobby` / `user` / `rabbitmq` 為 `healthy`
 - `prometheus` / `grafana` 為 `Up`
 
 ## 對外入口
@@ -69,7 +69,7 @@ docker compose -f docker/compose/compose.full.yml ps
 - Gate user TCP: `localhost:62001`
 - Central world TCP: `localhost:60001`
 - Central gate TCP: `localhost:60002`
-- World gate TCP: `localhost:61001`
+- World gate TCP: `localhost:61500`（容器內 61001）
 - Record HTTP: `localhost:6070`（查詢需帶 `Authorization: Bearer dev-record-token-local-stack-only`，見 `config/docker/record.yaml`）
 - RabbitMQ AMQP: `localhost:5672`
 - RabbitMQ UI: [http://localhost:15672](http://localhost:15672)
@@ -83,8 +83,8 @@ docker compose -f docker/compose/compose.full.yml ps
 - Central gate TCP: `localhost:16002`
 - World gate TCP: `localhost:16101`
 - Record HTTP: `localhost:26070`（同樣需帶 `Authorization: Bearer dev-record-token-local-stack-only`）
-- RabbitMQ AMQP: `localhost:5672`
-- RabbitMQ UI: [http://localhost:15672](http://localhost:15672)
+- RabbitMQ AMQP: `localhost:25672`
+- RabbitMQ UI: [http://localhost:25673](http://localhost:25673)
 - Lobby HTTP: `localhost:18080`
 - Grafana: [http://localhost:13000](http://localhost:13000)
 - Prometheus: [http://localhost:19090](http://localhost:19090)
@@ -96,8 +96,10 @@ Prometheus 會直接抓容器網路內的：
 - `central:6060`
 - `gate:6061`
 - `world:6062`
-- `record:6065`
 - `user:6063`
+- `lobby:6064`
+- `record:6065`
+- `chat:6066`
 
 Grafana 會自動 provision `Game Backend Overview` dashboard。
 
