@@ -79,6 +79,7 @@ GoLand 本機執行請使用：
   - `127.0.0.1:60004`（Lobby→Central，只接收 `TimeSync`）
   - `127.0.0.1:61001`
   - `127.0.0.1:62001`
+  - `127.0.0.1:63001`（Gate→Chat）
 - `world` 會把一般事件異步送到 `record`
 
 ## GoLand Run/Debug Configuration
