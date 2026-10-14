@@ -269,15 +269,13 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 
 ## 10. 升級相容性演練
 
-先在 staging 跑 rolling upgrade：
+先在 staging 跑升版演練：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/upgrade-compatibility-drill.ps1 -NewTag 1.0.1 -Rollback
 ```
 
-依 `central -> record -> world -> chat -> gate -> lobby` 逐個重建，每重建一個服務就跑一次 smoke。
-
-注意：服務之間的 `ServiceHello` 會比對發版身分，不同發版的服務互連會被斷線（見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md#服務之間)）。新舊發版逐台混跑的中間步驟預期 smoke 失敗；正式升版須整批替換同一次發版的所有服務。
+服務之間的 `ServiceHello` 會比對發版身分，不同發版的服務互連會被斷線（見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md#服務之間)），所以演練預設把同一發版的六個服務整批替換後跑 smoke，正式升版也須整批替換。`-PerService` 可依 `central -> record -> world -> chat -> gate -> lobby` 逐個重建，但只允許與現行相同的發版（見 [升級相容演練](./scripts/升級相容演練.md)）。
 
 `-Rollback` 會在升級完成後再反向退回舊版，驗證回滾也能收斂。
 
