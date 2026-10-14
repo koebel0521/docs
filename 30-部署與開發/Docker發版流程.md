@@ -39,7 +39,7 @@
 ### 手動步驟
 
 1. 決定版本號；`go run ./tools/releasemanifest generate -release <tag> -commit <SHA>` 依實際產物寫出 `release.json`
-2. `go run ./tools/releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`
+2. `go run ./tools/releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）
 3. build image
 4. push image
 5. 完成 MySQL backup / snapshot
