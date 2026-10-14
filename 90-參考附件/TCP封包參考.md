@@ -299,7 +299,9 @@ S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
 1. `ConnectInfo`（30101）：本節點 `AppID`。對端以 `msgsys.BindConnectInfo` 綁到 socket ID；socket 已綁其他 ID 時關閉連線
 2. `ServiceHello`（30105）：`msgsys.SendServiceHello` 送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
 
-接收端以 `msgsys.RegisterServiceHello(svc)` 註冊處理：`VerifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `msgsys.SetServiceIdentity` 設定；沒設定（單元測試）時不送也不驗證。
+接收端以 `msgsys.RegisterServiceHello(svc)` 註冊處理：`VerifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `msgsys.SetServiceIdentity` 設定；沒設定（單元測試）時不送、不驗證也不要求。
+
+設定身分後 hello 為強制：`ConnectInfoOnConnect.Connect` 送出自己的 hello 後登記等待對端 hello，`msgsys.ServiceHelloTimeout`（5 秒）內沒收到就記錄 `service hello timeout, closing socket` 並關閉；`SetServiceIdentity` 同時以 `tcpruntime.SetMsgGuard` 裝上前置檢查，等待中的連線收到 `ConnectInfo`、`ServiceHello` 以外的訊息時記錄 `message before service hello, closing socket` 並關閉。所有 S2S 方向（Central-Gate、Central-World、Central 與 Chat／Lobby 的時間同步、Gate-World、Gate-Chat、World-Central、World-Gate）都經 `ConnectInfoOnConnect` 收送 hello。
 
 ## s2sauth
 
@@ -336,7 +338,7 @@ S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
 | `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
 | `game_event_queue_overflow_total` | eventCh 滿 |
 | `game_msg_queue_dropped_total` | owner 廣播佇列滿 |
-| `game_service_hello_mismatch_total` | 發版身分不一致 |
+| `game_service_hello_mismatch_total` | 發版身分不一致、逾時未送 hello 或 hello 前送其他訊息 |
 | `game_heartbeat_timeout_total` | 玩家心跳逾時 |
 
 ### 協定紀錄
@@ -353,5 +355,5 @@ S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
 
 - `socket close`（Info；debug 等級另含呼叫鏈 `callers`）、`connect`／`disconnect`（Info，含 key 與位址）
 - `send queue overflow, closing socket`、`event queue overflow, closing socket`、`rate limit exceeded, closing connection`、`unknown message dropped`（Warn）
-- `S2S authentication rejected`、`S2S node reconnected, closing its previous connection`（Warn）、`service hello mismatch, closing socket`（Error）
+- `S2S authentication rejected`、`S2S node reconnected, closing its previous connection`（Warn）、`service hello mismatch, closing socket`、`service hello timeout, closing socket`、`message before service hello, closing socket`（Error）
 - `dialing`、`dial error`（client）、`accept error, retrying`（server）
