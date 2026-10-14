@@ -275,13 +275,10 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 powershell -ExecutionPolicy Bypass -File ./scripts/upgrade-compatibility-drill.ps1 -NewTag 1.0.1 -Rollback
 ```
 
-順序固定：
+依 `central -> record -> world -> chat -> gate -> lobby` 逐個重建，每重建一個服務就跑一次 smoke。
 
-1. `central`
-2. `world`
-3. `gate`
+注意：服務之間的 `ServiceHello` 會比對發版身分，不同發版的服務互連會被斷線（見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md#服務之間)）。新舊發版逐台混跑的中間步驟預期 smoke 失敗；正式升版須整批替換同一次發版的所有服務。
 
-每步都會跑 smoke，確認舊新混跑還能起。
 `-Rollback` 會在升級完成後再反向退回舊版，驗證回滾也能收斂。
 
 若要比較不同部署方案，先看 [部署方案比較.md](./部署方案比較.md)。

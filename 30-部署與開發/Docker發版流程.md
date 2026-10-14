@@ -45,7 +45,7 @@
 5. 完成 MySQL backup / snapshot
 6. 執行一次性的 `deps/PJA-Database/scripts/migrate-prod.sh`
 7. 確認 migration 成功後更新 deploy 主機上的 `.env.prod`
-8. 執行 production deploy
+8. 執行 production deploy：同一次發版的所有服務整批替換，不可新舊發版混跑（服務之間的 `ServiceHello` 比對發版身分，不一致會斷線，見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md#服務之間)）
 9. 跑 production smoke test
 10. 若失敗則只 rollback server image，保留已向前的 database schema
 
