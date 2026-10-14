@@ -505,8 +505,8 @@ TCP runtime 相關套件負責：
   往 socket 送包 queue 塞 message。
   `nil` 代表結束送包 loop。
 
-- `PushEvent(event)`
-  把 handler 丟給 dispatcher。
+- `PushEvent(fn) bool`
+  把 `fn` 包成事件送入統一事件迴圈；回傳 `false` 代表未送入（無事件佇列、連線已關閉，或玩家連線佇列滿被關閉），`fn` 不會執行，呼叫端須自行收尾（例如結束 span、記錄丟棄）。S2S 連線佇列滿時阻塞等待（背壓）。
 
 - `Async(f)`
   在 socket waitgroup 下跑 background goroutine。
