@@ -69,6 +69,7 @@ docker compose -f docker/compose/compose.full.yml ps
 - Gate user TCP: `localhost:62001`
 - Central world TCP: `localhost:60001`
 - Central gate TCP: `localhost:60002`
+- Central chat／lobby TCP（`60003`／`60004`）只在容器網路內，供 Chat、Lobby 接收 `TimeSync`（遊戲時間），不對宿主機開放；Chat、Lobby 等 Central `healthy` 才啟動，收到第一則 `TimeSync` 前 `/ready` 不就緒
 - World gate TCP: `localhost:61500`（容器內 61001）
 - Record HTTP: `localhost:6070`（查詢需帶 `Authorization: Bearer dev-record-token-local-stack-only`，見 `config/docker/record.yaml`）
 - RabbitMQ AMQP: `localhost:5672`

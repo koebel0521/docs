@@ -8,12 +8,14 @@
 | Gate→World（61001） | gate | gate-tokens.json | GateID＋gate-world.token |
 | Gate→Chat（63001） | chat | gate-tokens.json | GateID＋gate-chat.token |
 | World→Central（60001） | world | world-tokens.json | WorldID＋world-central.token |
+| Chat→Central（60003） | chat | chat-tokens.json | ChatID＋chat-central.token |
+| Lobby→Central（60004） | lobby | lobby-tokens.json | LobbyID＋lobby-central.token |
 
-每台 Gate 依目的服務持有三組獨立 token：Central、World、Chat。每台 World 持有自己的 Central token。每組 token 使用 32 隨機位元組產生；不同節點、不同目的服務不共用。重新連線沿用該組 token，不是每次握手重新產生。
+每台 Gate 依目的服務持有三組獨立 token：Central、World、Chat。每台 World、Chat、Lobby 各持有自己的 Central token；Chat、Lobby 連 Central 只為接收 `TimeSync`（遊戲時間）。每組 token 使用 32 隨機位元組產生；不同節點、不同目的服務不共用。重新連線沿用該組 token，不是每次握手重新產生。
 
 接收端授權檔只保存 `sha256:` 加上 64 位十六進位 SHA-256 摘要。呼叫端持有原始 token，透過 TLS 傳送；接收端計算摘要並固定時間比較。摘要不能直接當作 bearer token 登入。
 
-`config/dev`、`config/docker` 預設 `s2s_auth.enabled: false`，維持開發流程；正式設定 `docker/prod/config` 一律啟用，機密由 `.env.prod` 的 `S2S_SECRET_DIR` 掛載。啟用時 Central、Gate、World、Chat 都必須設定 `s2s_auth.enabled: true`，或 `S2S_AUTH_ENABLED=true`。已啟用程序須具備所有必要連線機密；Gate 僅在設定 Chat dial 時要求 Chat token。驗證失敗不退回明文，錯誤開關值、**漏設 `s2s_auth.enabled`**、缺失機密或明文授權清單都會回傳啟動錯誤；開發環境要停用必須明確設 `false`。
+`config/dev`、`config/docker` 預設 `s2s_auth.enabled: false`，維持開發流程；正式設定 `docker/prod/config` 一律啟用，機密由 `.env.prod` 的 `S2S_SECRET_DIR` 掛載。啟用時 Central、Gate、World、Chat、Lobby 都必須設定 `s2s_auth.enabled: true`，或 `S2S_AUTH_ENABLED=true`。已啟用程序須具備所有必要連線機密；Gate 僅在設定 Chat dial 時要求 Chat token。驗證失敗不退回明文，錯誤開關值、**漏設 `s2s_auth.enabled`**、缺失機密或明文授權清單都會回傳啟動錯誤；開發環境要停用必須明確設 `false`。
 
 ## 連線規則
 
@@ -92,7 +94,25 @@ s2s_auth:
   cert_file: /run/secrets/chat.crt
   key_file: /run/secrets/chat.key
   tokens_file: /run/secrets/gate-tokens.json
+  central:
+    ca_file: /run/secrets/ca.crt
+    token_file: /run/secrets/chat-central.token
+    server_name: central.internal
 ```
+
+Lobby（只連 Central）：
+
+```yaml
+id: 4001
+s2s_auth:
+  enabled: true
+  central:
+    ca_file: /run/secrets/ca.crt
+    token_file: /run/secrets/lobby-central.token
+    server_name: central.internal
+```
+
+Central 的 `s2s_auth.chat`、`s2s_auth.lobby` 監聽區段與 `world` 相同格式，授權清單分別為 `chat-tokens.json`、`lobby-tokens.json`。
 
 清單是 JSON 物件，例如 `{"2001":"sha256:<64位十六進位摘要>"}`；其中角括號部分須換成真實摘要。不得填入原始 token。原始 token 長度限制為 43 至 256 位元組，須用安全亂數產生器。憑證 DNS SAN 必須包含客戶端的 `server_name`；TCP 使用內部 IP 也能以名稱驗證，不能關閉驗證。各鍵可用大寫環境變數覆寫，例如 `S2S_AUTH_WORLD_SERVER_NAME`。
 
@@ -121,7 +141,9 @@ secrets/s2s/
 ├── central/
 │   ├── central.crt、central.key
 │   ├── gate-tokens.json              # Gate→Central 摘要
-│   └── world-tokens.json             # World→Central 摘要
+│   ├── world-tokens.json             # World→Central 摘要
+│   ├── chat-tokens.json              # Chat→Central 摘要
+│   └── lobby-tokens.json             # Lobby→Central 摘要
 ├── gate-2001/
 │   ├── ca.crt
 │   └── gate-central.token、gate-world.token、gate-chat.token
@@ -129,10 +151,16 @@ secrets/s2s/
 │   ├── world.crt、world.key、ca.crt
 │   ├── world-central.token
 │   └── gate-tokens.json
-└── chat/
-    ├── chat.crt、chat.key
-    └── gate-tokens.json
+├── chat/
+│   ├── chat.crt、chat.key、ca.crt
+│   ├── gate-tokens.json
+│   └── chat-central.token            # Chat→Central（預設 ChatID 3001）
+└── lobby-4001/
+    ├── ca.crt
+    └── lobby-central.token           # Lobby→Central
 ```
+
+`new-s2s-dev-secrets.ps1` 預設另產生 Chat 3001、Lobby 4001 的 Central token（`-ChatIDs`、`-LobbyIDs` 可改）。Chat 只有一個 `chat/` 目錄，連 Central 的 token 與 CA 也放在裡面，容器沿用原掛載；Lobby 掛 `lobby-${S2S_LOBBY_ID:-4001}`。
 
 各服務只掛載自己的目錄。目錄掛載能看到原子替換後的新檔案，單檔掛載可能仍指向舊檔案。產生器僅供開發；各 World 開發副本共用測試服務憑證，但節點 token 獨立。正式環境應限制宿主機權限、獨立配置私鑰並由受控系統簽發。舊版明文／共用 token 格式不再接受。開發環境請先停止啟用驗證的服務，在新目錄重新產生機密，切換掛載並一起重建容器；不要直接把舊共用 token 複製成三份。正式環境需事先配置獨立 token、其摘要、信任 CA 與憑證，安排協調切換。
 
@@ -147,9 +175,11 @@ secrets/s2s/
 ./scripts/update-s2s-gate-secret.ps1 -Action Add -Role World -NodeID 1003
 ./scripts/update-s2s-gate-secret.ps1 -Action Rotate -Role World -NodeID 1001
 ./scripts/update-s2s-gate-secret.ps1 -Action Revoke -Role World -NodeID 1003
+./scripts/update-s2s-gate-secret.ps1 -Action Rotate -Role Chat -NodeID 3001
+./scripts/update-s2s-gate-secret.ps1 -Action Add -Role Lobby -NodeID 4002
 ```
 
-使用 `-SecretDirectory <目錄>` 可指定機密根目錄。`-Destination Central|World|Chat` 只操作該目的服務；預設 `All` 操作 Gate 三個目的服務。World 僅接受 Central／All。撤銷可重複執行，不會重新授權已撤銷的連線。
+使用 `-SecretDirectory <目錄>` 可指定機密根目錄。`-Destination Central|World|Chat` 只操作該目的服務；預設 `All` 操作 Gate 三個目的服務。World、Chat、Lobby 僅接受 Central／All。撤銷可重複執行，不會重新授權已撤銷的連線。
 
 新增時可省略 ID，使用 `-PassThru` 取得配置結果：
 
@@ -158,7 +188,7 @@ $node = ./scripts/update-s2s-gate-secret.ps1 -Action Add -Role Gate -PassThru
 $node.NodeID
 ```
 
-Gate 從 2001、World 從 1001 起分配，管理端 `node-ids.json` 保存水位；退役、發布失敗均不回收 ID。明確指定 ID 仍可使用，新增更高 ID 會提高水位。配置服務的 `id` 後才啟動；這不是自動開 VM 或建立容器。管理目錄與水位檔須一起備份，所有分配都透過同一管理端。
+Gate 從 2001、World 從 1001、Chat 從 3001、Lobby 從 4001 起分配，管理端 `node-ids.json` 保存水位；退役、發布失敗均不回收 ID。明確指定 ID 仍可使用，新增更高 ID 會提高水位。配置服務的 `id` 後才啟動；這不是自動開 VM 或建立容器。管理目錄與水位檔須一起備份，所有分配都透過同一管理端。
 
 腳本以檔案鎖序列化操作；分別更新 Central、Chat 的 Gate 摘要清單，Gate→World 的摘要更新管理端 `world-gate-tokens.json` 並同步所有 `world-*` 目錄。新 World 複製目前的 World 專用 Gate 摘要。World 自身的 token 摘要只更新 Central 的 World 清單。
 

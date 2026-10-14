@@ -79,10 +79,20 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
 - 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
-- 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/` 分別唯讀掛載到各服務的 `/run/secrets`；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
+- 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/`、`lobby-4001/` 分別唯讀掛載到各服務的 `/run/secrets`（Chat、Lobby 也以 S2S 連 Central 60003／60004 接收遊戲時間）；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
 - 正式環境不傳 `FAULT_INJECT`；`go run ./tools/configaudit` 會檢查。
 - 告警通知：`monitoring` profile 含 Alertmanager，告警送往 `ALERTMANAGER_SECRET_DIR`（預設 `./alertmanager-secrets`，相對於 compose 檔目錄）下 `webhook_url` 檔案內的 URL（單行，例如團隊聊天室或值班系統的接收端）。目錄或檔案不存在時告警只會留在 Alertmanager 介面（`127.0.0.1:9093`），不會通知任何人；該目錄已列入 `.gitignore`。
 - Prometheus 時序資料放在具名資料卷 `prod-prometheus-data`，重建容器不會清空；保留期由 `PROMETHEUS_RETENTION` 控制（預設 `15d`）。
+
+### 主機時鐘（NTP）
+
+Central 的主機時鐘就是遊戲時間來源（骰子恢復、冷卻、任務、戰鬥到期、每日重置、公告上下架、封存判斷都以它為準，見 [共用邊界](../00-導讀/共用邊界.md#時間規則)），其他服務以 `TimeSync` 每秒校正到 Central。
+
+- **Central 主機必須跑 NTP**，建議 chrony（`systemctl enable --now chronyd`），指向同一組上游；確認 `chronyc tracking` 的 `System time` 偏差在毫秒級、`Leap status` 為 `Normal`。不要在服務運行中手動改系統時間。
+- 多台 Central 時各台都要同步到同一組 NTP 來源；Gate、World、Chat、Lobby 主機也建議跑 NTP：它們的計時（逾時、TTL）與日誌用自己的主機時鐘，偏差過大時 `game_clock_offset_seconds` 會變大。
+- MySQL 主機同樣要 NTP：Record outbox 的租約與排程以資料庫 `NOW(3)` 仲裁。
+- Central 時鐘往回校正超過 1 秒時，各服務的遊戲時間會停住直到追上（只前進，不倒退）；往前超過 1 秒會直接跳過。兩者都計入 `game_time_sync_jumps_total`。
+- 偏差告警（`monitoring/prometheus/alert-rules.yml`）：`GameClockOffsetHigh`（`|game_clock_offset_seconds| > 1` 持續 5 分鐘，表示該主機與 Central 相差逾 1 秒）、`GameTimeSyncJump`（5 分鐘內出現大跳）。收到告警先看 Central 與該主機的 `chronyc tracking`。
 
 ### 環境變數：AUTO_MIGRATE_DISABLED
 
@@ -206,6 +216,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 
 - `mysql` / `redis` healthy
 - `central` / `world` / `gate` healthy
+- `chat`、`lobby` 的 `/ready` 通過（`time_sync` 就緒檢查：已收到 Central 第一則 `TimeSync`）
 - 若有開監控，`prometheus` / `grafana` up
 
 ## 6. 更新版本
