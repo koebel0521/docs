@@ -8,7 +8,7 @@
 |------|------|
 | `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceEvent`、`Drainer`、`MessageCoder`、`Transport` 與 `AddMsgHandler`；只有介面，沒有實作 |
 | `pkg/framecodec` | frame 編解碼（`Coder`）與分級緩衝池 |
-| `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期）、`DefaultTransport` |
+| `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期）、`defaultTransport` |
 | `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`AcceptPolicy`）、S2S accept 握手 |
 | `pkg/tcpclient` | `Client`：dial、重連退避、位址輪替、S2S dial 握手 |
 | `pkg/tcpconfig` | `Config`、`ServerOptions`、listen／dial 位址解析（`BuildConfig`、`ListenAddr`、`DialAddrs`） |
@@ -103,7 +103,7 @@ type Msg interface {
 
 ```go
 type Service interface {
-	SocketFinder   // Get(key)、ByID(id)、All()、Random()
+	socketFinder   // Get(key)、ByID(id)、All()、Random()
 	Broadcaster    // SendAll(Msg)
 	AppID() int64
 	Name() string
@@ -116,7 +116,7 @@ type Service interface {
 }
 ```
 
-`tcpserver.Server` 與 `tcpclient.Client` 都嵌入 `*tcpsocket.OwnerBase` 實作它；`Server` 另實作 `Drainer`（`StopAccepting()`）。只需部分能力的消費端收 `SocketFinder`、`Broadcaster` 或自訂小介面。
+`tcpserver.Server` 與 `tcpclient.Client` 都嵌入 `*tcpsocket.OwnerBase` 實作它；`Server` 另實作 `Drainer`（`StopAccepting()`）。只需部分能力的消費端收 `socketFinder`、`Broadcaster` 或自訂小介面。
 
 ### Socket
 
@@ -186,12 +186,12 @@ go svc.Start()
 |------|------|
 | `WithConfig(tcpCfg)` | 讀寫逾時設為 `tcpsocket.ServerDeadline`，並套用 `tcpCfg` 的 `ServerOptions` 與位址解析 |
 | `WithReadDeadTime`／`WithWriteDeadTime` | 只接受正值；未設定預設 30 秒 |
-| `WithServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
+| `withServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
 | `WithTCPConfig(cfg)` | 只設定位址解析與握手 |
 | `WithSocketOptions(...)` | socket 層選項 |
 | `WithMaxFrameSize(n)` | 收包 frame 上限 |
 
-socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即關閉）、`WithUntrustedPeer`（玩家連線，見事件派發）、`WithSendQueueDepth`（送出佇列深度，Start 前套用）、`WithEventCh`（`NewOwnerBase` 自動附加）。
+socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即關閉）、`WithUntrustedPeer`（玩家連線，見事件派發）、`WithSendQueueDepth`（送出佇列深度，Start 前套用）、`withEventCh`（`NewOwnerBase` 自動附加）。
 
 ### Client
 
@@ -282,7 +282,7 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 | `tcpsocket.PlayerWriteDeadline` | 30 秒 | Gate 寫給玩家連線的逾時 |
 | `tcpsocket.UserDeadline` | 2 分鐘 | user 服務（模擬玩家）連往 Gate 的讀寫逾時 |
 | `tcpserver` 預設 | 30 秒 | 未指定讀寫逾時的 server |
-| `tcpsocket.DefaultDialTimeout` | 10 秒 | `DefaultTransport.Dial` |
+| `tcpsocket.defaultDialTimeout` | 10 秒 | `defaultTransport.Dial` |
 | `s2sauth` 握手 | 5 秒 | TLS 與身份 frame 完成前的整體 deadline，完成後清除 |
 
 讀寫 deadline 都有節流：距上次設定未超過逾時的 1/4 時不重設，避免每則訊息一次 `time.Now()`。逾時 0 代表不設 deadline。
@@ -297,9 +297,9 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
 
 1. `ConnectInfo`（30101）：本節點 `AppID`。對端以 `msgsys.BindConnectInfo` 綁到 socket ID；socket 已綁其他 ID 時關閉連線
-2. `ServiceHello`（30105）：`msgsys.SendServiceHello` 送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
+2. `ServiceHello`（30105）：`msgsys`（套件內 `sendServiceHello`）送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
 
-接收端以 `msgsys.RegisterServiceHello(svc)` 註冊處理：`VerifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `msgsys.SetServiceIdentity` 設定；沒設定（單元測試）時不送、不驗證也不要求。
+接收端以 `msgsys.RegisterServiceHello(svc)` 註冊處理：`verifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `msgsys.SetServiceIdentity` 設定；沒設定（單元測試）時不送、不驗證也不要求。
 
 設定身分後 hello 為強制：`ConnectInfoOnConnect.Connect` 送出自己的 hello 後登記等待對端 hello，`msgsys.ServiceHelloTimeout`（5 秒）內沒收到就記錄 `service hello timeout, closing socket` 並關閉；`SetServiceIdentity` 同時以 `tcpruntime.SetMsgGuard` 裝上前置檢查，等待中的連線收到 `ConnectInfo`、`ServiceHello` 以外的訊息時記錄 `message before service hello, closing socket` 並關閉。所有 S2S 方向（Central-Gate、Central-World、Central 與 Chat／Lobby 的時間同步、Gate-World、Gate-Chat、World-Central、World-Gate）都經 `ConnectInfoOnConnect` 收送 hello。
 
