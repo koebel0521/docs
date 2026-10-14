@@ -6,9 +6,9 @@
 
 | 套件 | 責任 |
 |------|------|
-| `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceEvent`、`Drainer`、`MessageCoder`、`Transport` 與 `AddMsgHandler`；只有介面，沒有實作 |
+| `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceEvent`、`Drainer` 與 `AddMsgHandler`；只有介面，沒有實作 |
 | `pkg/framecodec` | frame 編解碼（`Coder`）與分級緩衝池 |
-| `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期）、`defaultTransport` |
+| `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流、送出快速路徑）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期） |
 | `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`AcceptPolicy`）、S2S accept 握手 |
 | `pkg/tcpclient` | `Client`：dial、重連退避、位址輪替、S2S dial 握手 |
 | `pkg/tcpconfig` | `Config`、`ServerOptions`、listen／dial 位址解析（`BuildConfig`、`ListenAddr`、`DialAddrs`） |
@@ -16,7 +16,7 @@
 | `pkg/servicefinder` | `Finder` 介面（`Gate()`、`Central()`、`World()`、`User()`、`Chat()`、`Lobby()`），由 `tcpregistry.Registry` 實作 |
 | `pkg/s2sauth` | 服務間 TLS 1.3 + 節點 token 驗證、來源 CIDR 限制 |
 | `pkg/msg`、`pkg/msg/<群組>` | 執行期訊息型別（物件池、`PackTo`／`Unpack`）；`pkg/msg/system` 慣例匯入為 `msgsys` |
-| `pkg/msgpool` | `MsgBase[T]`、`MsgPool[T]` |
+| `pkg/msgpool` | `MsgBase[T]`、`Pool[T]` |
 | `pkg/protocol`、`pkg/protocol/wire` | 由 PJA-Protocol 產生的訊息 ID、描述表與 Luban 結構，不得手改 |
 | `pkg/tcpdiag` | 協定收送紀錄（`/diag/protocol` 的資料來源） |
 
@@ -30,7 +30,7 @@
 
 - `size` 含 6 byte header（`framecodec.FrameHeaderSize = 6`），小於 6 回 `ErrMsgSizeTooSmall`，超過上限回 `ErrMsgSizeExceedsLimit`，連線關閉
 - 上限：`Coder.MaxFrameSize`，0 或超過 4MB 時以 4MB 計。Gate 玩家連線設 `gateUserMaxFrameSize = 64 * 1024`（`tcpserver.WithMaxFrameSize`）；服務間連線為 4MB
-- payload 是 Luban 編碼的協定結構（`wire.*` 的 `AppendTo`／`UnpackFrom`）；frame 本身沒有版本或壓縮欄位
+- payload 是 Luban 編碼的協定結構（`wire.*` 的 `AppendTo`／`DecodeFrom`）；frame 本身沒有版本或壓縮欄位
 - S2S 驗證啟用時，frame 走在 TLS 之內；TLS 前的身份 frame 格式見下方 s2sauth
 
 ### 編碼
@@ -60,7 +60,8 @@
 | 30101–30105 | S2S 連線 | `ConnectInfo = 30101`、`HeartbeatReq = 30102`、`HeartbeatRes = 30103`、`TimeSync = 30104`、`ServiceHello = 30105` |
 | 30201 | S2S 系統聊天 | `ChatSystem` |
 | 30301–30304 | S2S 轉發 | `ForwardToWorld`、`SyncUsersGateToCentral`、`ClientBoardCommand`、`BoardClientEvent` |
-| 30401–30405 | S2S 對帳與頻道 | `AuditSnapshotRequest`、`ChannelBroadcast`、`ChannelMembershipSnapshot` |
+| 30401–30402 | S2S 對帳 | `AuditSnapshotRequest`、`AuditSnapshotResponse` |
+| 30403–30405 | 頻道（已停用） | `ChannelBroadcast`、`ChannelMembershipUpdate`、`ChannelMembershipSnapshot`；Go 端已無發送與接收，定義待下次升版移除 |
 | 30501–30502 | S2S 帳號保留 | `AccountRetentionRequest`、`AccountRetentionResponse` |
 
 完整清單以 `pkg/protocol/wire/Protocol.ProtocolMessageId.go` 為準。
@@ -80,7 +81,7 @@ type Msg interface {
 
 生成的訊息（例如 `pkg/msg/auth/login_response.go`、`pkg/msg/system/service_hello.go`）都長這樣：
 
-- 結構嵌入 `msgpool.MsgBase[T]` 與對應的 `wire.*` 結構；`MsgBase` 提供 `MsgID()` 與 `Put()`（歸還 `MsgPool`）
+- 結構嵌入 `msgpool.MsgBase[T]` 與對應的 `wire.*` 結構；`MsgBase` 提供 `MsgID()` 與 `Put()`（歸還 `Pool`）
 - `NewXxx()` 從池取物件並 `Init(id, pool, self)`；`Reset()` 清欄位
 - `PackTo(buf []byte) []byte` 把編碼接在 `buf` 之後；`Pack()` 委託 `PackTo(nil)`
 - `Unpack(data) bool` 解碼失敗回 false，訊息保持原值
@@ -96,6 +97,15 @@ type Msg interface {
 ### PackTo 快速路徑
 
 `Socket.handleOutgoing` 對實作 `PackTo` 的訊息：在 socket 自有的 `sendBuf` 前預留 6 byte，呼叫 `PackTo` 後用 `WriteFramePrebuilt` 寫出，省掉 `Pack()` 的配置與一次 payload 複製。`sendBuf` 只由 sendLoop 使用，容量超過 `maxRetainedSendBuf`（64KB）時不保留。沒有 `PackTo` 的訊息走 `Pack()` + `WriteFrame`。
+
+### 預序列化訊息（writev 路徑）
+
+已經是 wire bytes 的訊息（`OwnedRaw`、`Raw`、`packedMsg`，實作套件內介面 `prepackedMsg`，即 `Payload() []byte`）不再複製進 `sendBuf`，改走 `writePrepacked`：
+
+- payload 放得進 bufio 剩餘空間：`Write` 6 byte header 與 payload，只剩 bufio 一次複製
+- 放不下：先 `Flush`，再以 `net.Buffers{hdr, payload}.WriteTo(conn)` 一次 writev 寫出，零複製
+- header 與 iov 陣列放在 `Socket` 結構內，不逃逸，送出路徑零配置
+- 超過 frame 上限或短寫回傳錯誤，連線關閉
 
 ## 介面
 
@@ -282,7 +292,7 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 | `tcpsocket.PlayerWriteDeadline` | 30 秒 | Gate 寫給玩家連線的逾時 |
 | `tcpsocket.UserDeadline` | 2 分鐘 | user 服務（模擬玩家）連往 Gate 的讀寫逾時 |
 | `tcpserver` 預設 | 30 秒 | 未指定讀寫逾時的 server |
-| `tcpsocket.defaultDialTimeout` | 10 秒 | `defaultTransport.Dial` |
+| `tcpclient` 的 `defaultDialTimeout` | 10 秒 | 預設 `dial` 函式（`net.Dialer`） |
 | `s2sauth` 握手 | 5 秒 | TLS 與身份 frame 完成前的整體 deadline，完成後清除 |
 
 讀寫 deadline 都有節流：距上次設定未超過逾時的 1/4 時不重設，避免每則訊息一次 `time.Now()`。逾時 0 代表不設 deadline。
@@ -332,7 +342,7 @@ S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
 |------|------|
 | `tcp_connections_active`、`tcp_connections_total` | 依 `service`（owner 名稱）計 |
 | `tcp_messages_sent_total`、`tcp_messages_received_total` | 收送訊息數 |
-| `tcp_send_queue_depth`、`tcp_send_queue_overflow_total` | socket 送出佇列深度與溢位關閉次數 |
+| `tcp_send_queue_depth`、`tcp_send_queue_overflow_total` | socket 送出佇列深度（scrape 時加總各 socket 的 `len(sendCh)`，不再逐則 Inc/Dec）與溢位關閉次數 |
 | `tcp_unknown_messages_total` | 未註冊訊息 |
 | `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄 |
 | `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
