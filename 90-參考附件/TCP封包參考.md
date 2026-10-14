@@ -1,845 +1,357 @@
 # TCP 封包詳細參考
 
-本文件保留完整結構、介面與函式細節；閱讀入口請先看[TCP 元件索引](TCP元件索引.md)。
+本頁依現行程式整理 TCP runtime 的封包格式、介面、連線生命週期與診斷方式；閱讀順序見 [TCP 元件索引](TCP元件索引.md)，frame 位元組細節另見 [framecodec 封包格式](framecodec封包格式.md)，登入呼叫鏈見[連線與登入流程](../10-核心流程/連線與登入流程.md)，S2S 驗證的部署設定見 [S2S 身份驗證](../30-部署與開發/S2S身份驗證.md)。
 
-這份文件整理 `pkg/tcpserver`、`pkg/tcpclient`、`pkg/tcpsocket`、`pkg/msgpool` 與相關 TCP 輔助套件的主要結構、介面與函式用途，目標是幫你快速建立「整個 TCP runtime 怎麼運作」的心智模型，而不是只看零散 API。
+## 套件分工
 
-`Server` / `Client` / `OwnerBase` / `ServerOptions` / transport / socket / coder / 訊息池等 runtime orchestration 已移到 [`pkg/tcpserver`](../../pkg/tcpserver/server_listen.go)、[`pkg/tcpclient`](../../pkg/tcpclient/client.go)、[`pkg/tcpsocket`](../../pkg/tcpsocket/socket.go) 與 [`pkg/msgpool`](../../pkg/msgpool/pool.go)，對外最小介面在 [`pkg/tcpruntime`](../../pkg/tcpruntime/tcpapi_service.go)（原 `pkg/tcpapi`），服務查找介面在 [`pkg/servicefinder`](../../pkg/servicefinder/servicefinder.go)，協定記錄 core 在 [`pkg/tcpdiag`](../../pkg/tcpdiag/protocol_record.go)，`/diag/protocol` 由 [`pkg/debug`](../../pkg/debug/server.go) 掛載，重連退避策略已整併至 [`pkg/tcpclient`](../../pkg/tcpclient/client_reconnect.go)，Registry 在 [`pkg/tcpregistry`](../../pkg/tcpregistry/registry.go)，而 `registry.NewService(...)` 會直接接收 `serverOpts`、client 位址查詢函式與可選的 `socketOpts`。
+| 套件 | 責任 |
+|------|------|
+| `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceEvent`、`Drainer`、`MessageCoder`、`Transport` 與 `AddMsgHandler`；只有介面，沒有實作 |
+| `pkg/framecodec` | frame 編解碼（`Coder`）與分級緩衝池 |
+| `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期）、`DefaultTransport` |
+| `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`AcceptPolicy`）、S2S accept 握手 |
+| `pkg/tcpclient` | `Client`：dial、重連退避、位址輪替、S2S dial 握手 |
+| `pkg/tcpconfig` | `Config`、`ServerOptions`、listen／dial 位址解析（`BuildConfig`、`ListenAddr`、`DialAddrs`） |
+| `pkg/tcpregistry` | `Registry`：登記各服務 owner、依名稱查找、`Drain` 滾動部署 |
+| `pkg/servicefinder` | `Finder` 介面（`Gate()`、`Central()`、`World()`、`User()`、`Chat()`、`Lobby()`），由 `tcpregistry.Registry` 實作 |
+| `pkg/s2sauth` | 服務間 TLS 1.3 + 節點 token 驗證、來源 CIDR 限制 |
+| `pkg/msg`、`pkg/msg/<群組>` | 執行期訊息型別（物件池、`PackTo`／`Unpack`）；`pkg/msg/system` 慣例匯入為 `msgsys` |
+| `pkg/msgpool` | `MsgBase[T]`、`MsgPool[T]` |
+| `pkg/protocol`、`pkg/protocol/wire` | 由 PJA-Protocol 產生的訊息 ID、描述表與 Luban 結構，不得手改 |
+| `pkg/tcpdiag` | 協定收送紀錄（`/diag/protocol` 的資料來源） |
 
-## 整體定位
+## 封包格式
 
-TCP runtime 相關套件負責：
+每個 frame：
 
-- 依照設定建立 server/client 連線
-- 管理多個 socket
-- 封包編解碼
-- 訊息 factory / handler 註冊與派發
-- 連線生命週期與重連
-- 廣播、單點傳送、依 ID 查找 socket
+```
+[4B size uint32 LE][2B msgID uint16 LE][payload]
+```
 
-它的分層大致如下：
+- `size` 含 6 byte header（`framecodec.FrameHeaderSize = 6`），小於 6 回 `ErrMsgSizeTooSmall`，超過上限回 `ErrMsgSizeExceedsLimit`，連線關閉
+- 上限：`Coder.MaxFrameSize`，0 或超過 4MB 時以 4MB 計。Gate 玩家連線設 `gateUserMaxFrameSize = 64 * 1024`（`tcpserver.WithMaxFrameSize`）；服務間連線為 4MB
+- payload 是 Luban 編碼的協定結構（`wire.*` 的 `AppendTo`／`UnpackFrom`）；frame 本身沒有版本或壓縮欄位
+- S2S 驗證啟用時，frame 走在 TLS 之內；TLS 前的身份 frame 格式見下方 s2sauth
 
-1. `Server` / `Client` 代表一種服務連線角色
-2. `serviceBase` 提供共用能力：socket 建立、send queue、msg registry
-3. `Socket` 代表單一 TCP 連線
-4. `Sockets` 管理某個 service 下面的所有連線
-5. `Coder` 與 `packedMsg` 處理訊息編碼與廣播封裝
+### 編碼
 
-最小介面在 [`pkg/tcpruntime`](../../pkg/tcpruntime/tcpapi_service.go)（原 `pkg/tcpapi`），`Server` 的 runtime orchestration 在 [`pkg/tcpserver`](../../pkg/tcpserver/server_listen.go)，`Client` 的 runtime orchestration 在 [`pkg/tcpclient`](../../pkg/tcpclient/client.go)，`Socket` / `Sockets` / `Coder` 實作在 [`pkg/tcpsocket`](../../pkg/tcpsocket/socket.go)，服務查找介面在 [`pkg/servicefinder`](../../pkg/servicefinder/servicefinder.go)，協定記錄 core 在 [`pkg/tcpdiag`](../../pkg/tcpdiag/protocol_record.go)，`/diag/protocol` 路由在 [`pkg/debug`](../../pkg/debug/server.go)，Registry 在 [`pkg/tcpregistry`](../../pkg/tcpregistry/registry.go)。
+- `Coder.WriteFrame(w, id, payload)`：payload ≤ 250 bytes 時用堆疊上的 256 byte 陣列組 frame，否則從分級池取緩衝，複製 payload 後一次 `Write`
+- `Coder.WriteFramePrebuilt(w, id, frame)`：呼叫端已在 frame 前預留 6 byte，只填 header 後寫出。`Socket` 的送出快速路徑用它（見下方 PackTo）
 
-## 執行流程
+### 解碼
+
+- `Coder.DecodePooled(r)` 回傳 `(id, payload, release, err)`；payload 借自池，處理完必須呼叫 `release`
+- 分級池：8KB／64KB／512KB；超過 512KB 的緩衝直接配置、不還池
+- 大於 64KB 的 frame 依實際收到的資料逐步擴充（初始 64KB、每次加倍），不依對端宣告的長度預先配置，避免只送 header 的連線佔住 4MB
+- `Coder.Decode(r, b)` 是使用呼叫端暫存的非池版本
+
+## 訊息 ID
+
+`protocol.MessageID` 是 `struct{ Value uint16 }`（`pkg/protocol/types`）；數值定義在 `wire.ProtocolMessageID_*`，`protocol.LookupMessage`（Client 訊息）提供名稱、種類（`MessageKindRequest`／`Response`／`Command`／`Event`）與方向。`protocol.ProtocolVersion`、`protocol.SchemaHash` 標示產生版本。
+
+| 範圍 | 用途 | 例 |
+|------|------|------|
+| 0 | `ProtocolMessageID_Unknown`；收到 0 時 socket 記錄錯誤後略過該 frame，保持連線 | |
+| 1–31 | Client 盤面、戰鬥、任務 | `LoadPlayerRequest = 1`、`RollDiceCommand = 3`、`ChangeSetEvent = 31` |
+| 1001–1004 | Client 登入登出 | `LoginRequest = 1001`、`LogoutResponse = 1004` |
+| 2005–2011 | Client 連線：心跳、校時、版本握手 | `HeartbeatRequest = 2005`、`HelloRequest = 2009`、`VersionNotice = 2011` |
+| 2201–2206 | Client 聊天 | `ChatJoin = 2201`、`ChatSync = 2206` |
+| 30001–30012 | S2S 登入登出鏈 | `LoginGateToCentral = 30001`、`LoginRejectedGateToCentral = 30012` |
+| 30101–30105 | S2S 連線 | `ConnectInfo = 30101`、`HeartbeatReq = 30102`、`HeartbeatRes = 30103`、`TimeSync = 30104`、`ServiceHello = 30105` |
+| 30201 | S2S 系統聊天 | `ChatSystem` |
+| 30301–30304 | S2S 轉發 | `ForwardToWorld`、`SyncUsersGateToCentral`、`ClientBoardCommand`、`BoardClientEvent` |
+| 30401–30405 | S2S 對帳與頻道 | `AuditSnapshotRequest`、`ChannelBroadcast`、`ChannelMembershipSnapshot` |
+| 30501–30502 | S2S 帳號保留 | `AccountRetentionRequest`、`AccountRetentionResponse` |
+
+完整清單以 `pkg/protocol/wire/Protocol.ProtocolMessageId.go` 為準。
+
+## 訊息型別慣例
+
+`tcpruntime.Msg` 只要求四個方法：
+
+```go
+type Msg interface {
+	MsgID() protocol.MessageID
+	Pack() []byte
+	Unpack([]byte) bool
+	Put()
+}
+```
+
+生成的訊息（例如 `pkg/msg/auth/login_response.go`、`pkg/msg/system/service_hello.go`）都長這樣：
+
+- 結構嵌入 `msgpool.MsgBase[T]` 與對應的 `wire.*` 結構；`MsgBase` 提供 `MsgID()` 與 `Put()`（歸還 `MsgPool`）
+- `NewXxx()` 從池取物件並 `Init(id, pool, self)`；`Reset()` 清欄位
+- `PackTo(buf []byte) []byte` 把編碼接在 `buf` 之後；`Pack()` 委託 `PackTo(nil)`
+- `Unpack(data) bool` 解碼失敗回 false，訊息保持原值
+- 帶追蹤欄位的訊息實作 `msg.RequestScopedMessage`（`RequestMeta()`）或 `msg.TraceScopedMessage`（`TraceMeta()`）；`msg.NextRequestID`、`msg.NextTraceID` 產生行程內單調 ID
+
+所有權規則：
+
+- `SendMsg` 之後訊息歸 socket，送完由 sendLoop `Put`；呼叫端不可再使用
+- 收到的訊息由 handler 事件執行完後 `Put`；handler 要跨 goroutine 保留資料須先複製
+- `msg.Raw`（`NewRaw`）建立時複製 payload，可多個 socket 共用，`Put` 為 no-op；`msg.OwnedRaw`（`TakeOwnedRaw`）只送單一 socket，交換緩衝不複製，送出後歸還池
+- `msgsys.SharedHeartbeatReq` 是不回收的單例（pool 為 nil），心跳廣播重複送它
+
+### PackTo 快速路徑
+
+`Socket.handleOutgoing` 對實作 `PackTo` 的訊息：在 socket 自有的 `sendBuf` 前預留 6 byte，呼叫 `PackTo` 後用 `WriteFramePrebuilt` 寫出，省掉 `Pack()` 的配置與一次 payload 複製。`sendBuf` 只由 sendLoop 使用，容量超過 `maxRetainedSendBuf`（64KB）時不保留。沒有 `PackTo` 的訊息走 `Pack()` + `WriteFrame`。
+
+## 介面
+
+### Service
+
+```go
+type Service interface {
+	SocketFinder   // Get(key)、ByID(id)、All()、Random()
+	Broadcaster    // SendAll(Msg)
+	AppID() int64
+	Name() string
+	Start()
+	Close()
+	MsgFactory(protocol.MessageID) MsgFactory
+	MsgHandler(protocol.MessageID) MsgHandler
+	AddNewMsg(func() Msg, func(Service, Socket, Msg))
+	Async(func())
+}
+```
+
+`tcpserver.Server` 與 `tcpclient.Client` 都嵌入 `*tcpsocket.OwnerBase` 實作它；`Server` 另實作 `Drainer`（`StopAccepting()`）。只需部分能力的消費端收 `SocketFinder`、`Broadcaster` 或自訂小介面。
+
+### Socket
+
+```go
+type Socket interface {
+	Peer                 // Key()、ID()、SendMsg(Msg)、Context()
+	Conn() net.Conn
+	Data() any
+	RemoteAddr() string
+	LocalAddr() string
+	PushEvent(func()) bool
+	Start()
+	Close()
+	Wait()
+	SetKey(string)
+	SetID(int64)
+	SetData(any)
+}
+```
+
+- `Key()`：建立時由 `netx.NewSocketKey()` 產生的連線唯一鍵；`ID()`：綁定的玩家 ID 或節點 ID（`Sockets.ByID` 依此索引）
+- `Context()`：handler 執行期間帶該訊息 traceID 的 context；連線結束時取消
+- `PushEvent(fn)`：把任意工作送進事件迴圈，回傳 false 代表沒送入、fn 不會執行
+
+### ServiceEvent
+
+```go
+type ServiceEvent interface {
+	Connect(Service, Socket)
+	Disconnect(Service, Socket)
+	Init(Service)
+}
+```
+
+各服務 handler 實作它：`Init` 註冊訊息，`Connect`／`Disconnect` 處理連線事件。`msgsys.ConnectInfoOnConnect` 可嵌入作為 S2S 的 `Connect` 預設實作。
+
+### 註冊 handler
+
+```go
+tcpruntime.AddMsgHandler(svc, msgsys.NewHelloRequest, r.onHelloRequest)
+```
+
+`AddMsgHandler[T]` 包裝型別斷言後呼叫 `OwnerBase.AddNewMsg`。同一 ID 重複註冊只保留第一個並記錄錯誤。owner 為已驗證（S2S 握手）服務時，handler 在註冊時包上 `guardAuthenticated`：連線 context 已取消或該 socket 已不在 owner 的連線集合中（例如被同節點新連線取代）時，訊息直接略過。
+
+## 建構
+
+### Server
+
+```go
+svc := tcpserver.NewServer(name, baseApp, ownerEvent,
+	tcpserver.WithConfig(tcpCfg),
+	tcpserver.WithWriteDeadTime(tcpsocket.PlayerWriteDeadline),
+	tcpserver.WithMaxFrameSize(gateUserMaxFrameSize),
+	tcpserver.WithSocketOptions(
+		tcpsocket.WithRateLimit(rate.Limit(gateUserRatePerSec), gateUserRateBurst),
+		tcpsocket.WithUntrustedPeer(),
+		tcpsocket.WithSendQueueDepth(gateUserSendQueueDepth),
+	),
+)
+registry.Register(svc)
+go svc.Start()
+```
+
+（節錄自 `cmd/gate/internal/services/userserver.go`。）選項：
+
+| 選項 | 作用 |
+|------|------|
+| `WithConfig(tcpCfg)` | 讀寫逾時設為 `tcpsocket.ServerDeadline`，並套用 `tcpCfg` 的 `ServerOptions` 與位址解析 |
+| `WithReadDeadTime`／`WithWriteDeadTime` | 只接受正值；未設定預設 30 秒 |
+| `WithServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
+| `WithTCPConfig(cfg)` | 只設定位址解析與握手 |
+| `WithSocketOptions(...)` | socket 層選項 |
+| `WithMaxFrameSize(n)` | 收包 frame 上限 |
+
+socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即關閉）、`WithUntrustedPeer`（玩家連線，見事件派發）、`WithSendQueueDepth`（送出佇列深度，Start 前套用）、`WithEventCh`（`NewOwnerBase` 自動附加）。
+
+### Client
+
+```go
+svc := tcpclient.NewClient(name, baseApp, ownerEvent,
+	tcpclient.WithTCPConfig(tcpCfg),
+	tcpclient.WithReadDeadTime(...), tcpclient.WithWriteDeadTime(...))
+```
+
+### 設定與位址
+
+`tcpconfig.BuildConfig(v, appID)` 每次解析都即時讀 viper：
+
+- listen：`<appID>.listen.<service>.ip`（`host:port`），`ParseListenAddr` 解析為 IPv4 TCP 位址
+- dial：`<appID>.dial.<service>` 底下每個項目的 `ip`，`ParseDialAddrs` 排序去重；部分項目無效時略過，全部無效才回錯
+- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、`tcp.max_connections`（未設時讀 `max_connections`，0 不限制）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ParseServerOptions`）
+
+## 連線生命週期
 
 ### Server 端
 
-1. `tcpregistry.NewService(...)` 建出 `Server`
-2. `Server.Start()` 依設定讀出 listen address
-3. `Server.listen()` 啟動 listener
-4. `acceptLoop()` 接受新連線
-5. 每條連線包成一個 `Socket`
-6. `Socket.receiveLoop()` 收包、解碼、派發 handler
-7. `Socket.sendLoop()` 處理送包
+1. `Server.Start()` → `OwnerBase.RunLifecycle(prepareListen, runServer)`：`prepareListen` 以 `tcpconfig.ListenAddr` 解析位址；成功後建立 `Sockets`，`RunServiceBody` 呼叫 `ServiceEvent.Init`、啟動廣播佇列 goroutine、再在背景跑 `runServer`，`Start` 阻塞到 owner 結束
+2. `listen()` 監聽成功或失敗後註冊就緒檢查 `tcp_listen_<name>`（`debug.RegisterReadyChecker`）：監聽失敗、尚未監聽或已 `StopAccepting` 時 `/ready` 回 503；監聽失敗時行程不退出
+3. `acceptLoop()`：
+   - `Accept` 回 `net.ErrClosed` 或 owner 已關閉時結束；其他錯誤（EMFILE、ECONNABORTED 等）以 5ms 起加倍、上限 1 秒退避後重試
+   - `AcceptPolicy.Check(host, Sockets.Len())`：先檢查來源 IP 限流（`ratelimit.IPRateLimiter`），再檢查 `MaxConns`；被拒直接關閉
+   - 並發上限 `connSem`（`MaxConns`，未設定為 10000）滿時直接拒絕，不阻塞 accept loop
+4. `handleConn`：有 `AcceptHandshake[name]` 時先做 S2S 驗證，取得已驗證的節點 ID；失敗記 Warn 後關閉
+5. `OwnerBase.ServeConn(conn, id)`：建 socket、`id != 0` 時先 `SetID`、加入 `Sockets`、`Start()`（啟動收送兩個 goroutine）、`Connect` 回呼、`Wait()` 到連線結束、`Disconnect` 回呼並從 `Sockets` 移除
+6. `Close()`：`CloseRuntime` 標記關閉、關閉所有 socket 與 listener，等待所有 goroutine 結束
 
 ### Client 端
 
-1. `tcpregistry.NewService(...)` 建出 `Client`
-2. `Client.Start()` 依設定讀出 dial address 列表並正規化順序
-3. 只維持一條 `dialLoop()`
-4. 連上後建立 `Socket`
-5. socket 中斷時依 `backoff.BackOff`（指數退避，含 jitter） 重連，失敗時切到下一個候選位址
-6. `Close()` 後會停止後續重連
+1. `Client.Start()` → `RunLifecycle(prepareDial, runClient)`：`prepareDial` 以 `tcpconfig.DialAddrs` 取得已排序的位址清單
+2. `dialLoop` 先等 1 秒，接著 `dialWithRetry`：同一時間只有一條 dial goroutine、一條連線
+3. 每次 dial：`tcp_reconnect_attempts_total` +1；有 `DialHandshake[name]` 時做 S2S 握手
+4. 失敗：`tcp_reconnect_total{result="fail"}` +1，依退避等待後換下一個位址（round-robin）
+5. 成功：`tcp_reconnect_total{result="success"}` +1，退避重設，`ServeConn(conn, 0)` 阻塞到斷線；斷線後等一次退避間隔（重設後約 1 秒）再連同一位址
+6. `Close()` 後迴圈結束，不再重連
 
-## `tcpserver`
+### 重連退避
 
-`tcpserver` 是 TCP server runtime orchestration 的實作層。
+`tcpclient.defaultReconnectBackOff()`：`cenkalti/backoff/v5` 的 `ExponentialBackOff`，初始 1 秒、倍率 2、上限 30 秒、jitter 0.3；成功連上即 `Reset()`。`nextDelay` 至少 1ms，`backoff.Stop` 時以 30 秒計。等待用 `OwnerBase.SleepOrStop`，owner 關閉時立即返回。
 
-### 主要職責
+### 關閉 socket
 
-- 解析 `ServerOptions`、listen 位址
-- 建立 server runtime
-- 管理 accept 連線與 socket 生命週期
+- `Socket.Close()` 只執行一次：標記關閉、送 nil 停止訊號給 sendLoop，sendLoop flush 已排隊的訊息後關閉連線並排空剩餘訊息（歸還池）
+- 送出佇列已滿放不進停止訊號時直接關閉 `net.Conn`，並在背景補送停止訊號，避免 `Wait()` 卡住
+- receiveLoop 結束（EOF、解碼錯誤、限流、玩家協定違規、讀取逾時）一律 `Close()`
 
-## `tcpclient`
+## 事件派發
 
-`tcpclient` 是 TCP client runtime orchestration 的實作層。
+所有連線收到的訊息都送進該 app 唯一的事件迴圈（`AppHost.EventCh()`，元素為 `appcore.Event`），handler 在事件迴圈執行，不需自行加鎖。
 
-### 主要職責
+收包流程（`Socket.receiveOnce`／`handleIncoming`）：
 
-- 解析 dial 位址
-- 建立 client runtime
-- 管理 socket 生命週期與重連（含 reconnect/backoff）
-- 提供 rate limit 抽象
+1. 節流設定 read deadline 後 `DecodePooled`
+2. 讀取限流超過 → 關閉
+3. msgID 為 0 → 記錄後略過
+4. 用 owner 的 factory 建訊息、`Unpack`、歸還緩衝
+5. 記錄協定事件（`tcpdiag.RecordEvent`）、`tcp_messages_received_total` +1
+6. `PushMsgEvent`：從池取 `msgEvent` 送進 eventCh；事件執行時若訊息實作 `TraceScopedMessage`，先把 traceID 注入 `Socket.Context()` 再呼叫 handler，結束後 `Put` 訊息
 
-### 主要檔案（tcpserver）
+玩家連線（`WithUntrustedPeer`）與服務間連線的差異：
 
-| 檔案 | 主要責任 |
-|------|----------|
-| `server.go` | 監聽、accept、server 生命週期 |
-| `server_test.go` | runtime server 行為測試 |
-| `config.go` | 從 viper 解析 listen address 與 `ServerOptions` |
-| `transport.go` | 抽象化 listen，方便測試替換 |
+| 情況 | 玩家連線 | S2S 連線 |
+|------|----------|----------|
+| 未註冊的訊息 ID 或沒有 handler | 關閉連線 | 記錄並丟棄（`tcp_unknown_messages_total`） |
+| `Unpack` 失敗 | 關閉連線 | 丟棄（`tcp_dropped_messages_total{reason="unpack"}`），連線保留 |
+| handler panic | 關閉連線 | 丟棄（`reason="handler_panic"`），連線保留 |
+| eventCh 已滿 | 關閉連線 | 阻塞等待（背壓）直到送入或連線結束 |
+| 解碼錯誤日誌 | Warn | Error |
 
-### 主要檔案（tcpclient）
+eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 
-| 檔案 | 主要責任 |
-|------|----------|
-| `client.go` | 主動撥號、重連、client 生命週期 |
-| `client_test.go` | runtime client 行為測試 |
-| `ratelimit.go` | IP token bucket 限流器 |
-| `config.go` | 從 viper 解析 dial address |
-| `transport.go` | 抽象化 dial，方便測試替換 |
+### 送出與廣播
 
-## `tcpsocket`
+- `Socket.SendMsg`：非阻塞送入 `sendCh`；佇列已達深度（`WithSendQueueDepth` 或 `DefaultSocketSendQueueDepth`）代表對端長時間不讀，直接關閉連線並計 `tcp_send_queue_overflow_total`。Gate 玩家連線深度 1024
+- sendLoop 單一 goroutine 依序寫入 `bufio.Writer`（4KB），佇列空了才 `Flush`，連續訊息合併成一次寫入
+- `OwnerBase.SendAll(msg)`：工作放進 owner 佇列（server 10000、client 1000）由背景 goroutine 執行；佇列滿時丟棄並計 `game_msg_queue_dropped_total`。執行時 `Sockets.SendAll` 只 `Pack` 一次，包成引用計數的 `packedMsg` 分送給快照中的每個 socket
+- `OwnerBase.Async(f)`：在 owner 的 WaitGroup 下開 goroutine，`Close` 會等它結束
 
-### 介面與結構
+## Deadline
 
-- `type Socket struct`
-  單一 TCP 連線的收發與訊息派發。
+| 常數 | 值 | 用途 |
+|------|----|------|
+| `tcpsocket.ServerDeadline` | `3 * appcore.HeartbeatInterval`（180 秒） | `tcpserver.WithConfig` 的服務間連線與 Gate 玩家連線讀寫逾時 |
+| `tcpsocket.PlayerWriteDeadline` | 30 秒 | Gate 寫給玩家連線的逾時 |
+| `tcpsocket.UserDeadline` | 2 分鐘 | user 服務（模擬玩家）連往 Gate 的讀寫逾時 |
+| `tcpserver` 預設 | 30 秒 | 未指定讀寫逾時的 server |
+| `tcpsocket.DefaultDialTimeout` | 10 秒 | `DefaultTransport.Dial` |
+| `s2sauth` 握手 | 5 秒 | TLS 與身份 frame 完成前的整體 deadline，完成後清除 |
 
-- `type Sockets struct`
-  多 socket 容器與索引。
+讀寫 deadline 都有節流：距上次設定未超過逾時的 1/4 時不重設，避免每則訊息一次 `time.Now()`。逾時 0 代表不設 deadline。
 
-- `type Coder struct`
-  TCP frame 編解碼器。
+## 心跳
 
-### 函式
+- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `msgsys.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq`；對端以 `msgsys.HandleHeartbeatReq` 回 `HeartbeatRes`，發起端用 `msgsys.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerDeadline`）收不到任何資料就讀取逾時斷線
+- 玩家：Client 送 `HeartbeatRequest`（2005），Gate `onHeartbeatReq` 回 `HeartbeatResponse`；已登入的連線才刷新最後心跳時間。Gate 每 30 秒掃描，超過 `userHeartbeatTimeout = 90s` 沒心跳即斷線（`game_heartbeat_timeout_total{service="gate_user"}`）；建立連線後 30 秒（`userLoginHandshakeTimeout`）內未完成登入也斷線
 
-- `NewSocket(...)`
-  建立 socket。
+## ConnectInfo 與 ServiceHello
 
-- `NewSockets()`
-  建立 sockets 容器。
+S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
 
-- `newSocket(...)`
-  內部 socket 建構 helper，供測試使用。
+1. `ConnectInfo`（30101）：本節點 `AppID`。對端以 `msgsys.BindConnectInfo` 綁到 socket ID；socket 已綁其他 ID 時關閉連線
+2. `ServiceHello`（30105）：`msgsys.SendServiceHello` 送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
 
-- `newSockets()`
-  內部容器建構 helper，供測試使用。
+接收端以 `msgsys.RegisterServiceHello(svc)` 註冊處理：`VerifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `msgsys.SetServiceIdentity` 設定；沒設定（單元測試）時不送也不驗證。
 
-## `service.go`
+## s2sauth
 
-### 常數
+`s2s_auth.enabled` 必須明確設定（漏設視為設定錯誤）；`false` 時服務間為明文，每個行程警告一次。
 
-- `DeadlineServer`
-  用於服務器之間連線的預設讀寫 timeout。
+- 監聽端：`s2sauth.ConfigureServerFor(v, cfg, service, prefix)` 讀 `<prefix>.cert_file`、`key_file`（每 30 秒重讀憑證）、`tokens_file`（節點 ID → `sha256:<hex>`，檔案變更時 `UpdateTokens` 原子替換並關閉被撤銷的連線）、`allowed_cidrs`，安裝 `cfg.AcceptHandshake[service]`
+- 連出端：`s2sauth.ConfigureClientFor(v, cfg, nodeID, service, prefix)` 讀 `<prefix>.ca_file`、`token_file`、`server_name`，安裝 `cfg.DialHandshake[service]`；每次 dial 重讀檔案
 
-- `DeadlineUser`
-  用於 `gate <-> user` 這種面向玩家連線的預設讀寫 timeout。
+握手（5 秒內完成）：
 
-### 介面與結構
+1. 監聽端先比對來源 IP 是否在 `allowed_cidrs`
+2. TLS 1.3 握手，連出端驗證伺服器憑證與 `server_name`（不允許 `InsecureSkipVerify`）
+3. 連出端送身份 frame：`"PJA1"` + 節點 ID（int64 BE）+ token 長度（uint16 BE，43–256）+ token（`s2sauth.IdentityFrame`）
+4. 監聽端以固定時間比對 token 雜湊，通過回 1 byte ack，失敗直接斷線（連出端 `ReadAck` 回錯）
+5. 同一節點以有效憑證重連時取代並關閉舊連線（多半是對端重啟留下的半開連線）
 
-- `type IServiceEvent interface`
-  service 生命週期 callback。
-  包含：
-  - `Connect`
-  - `Disconnect`
-  - `Init`
-  - `Destroy`
+驗證通過的節點 ID 交給 `ServeConn` 預先 `SetID`，且 owner 啟用 `guardAuthenticated`。
 
-- `type IService interface`
-  給上層 handler 使用的統一 service 能力。
-  重要方法：
-  - 查詢 socket：`Get`、`GetByID`、`GetRandom`
-  - 發送訊息：`Send`、`SendByID`、`SendAll`
-  - 註冊訊息：`AddNewMsg`
-  - 取得訊息 factory / handler：`GetMsgFactory`、`GetMsgHandler`
-  - 基礎設定：`SetCoder`、`SetTransport`
-  - 背景執行：`Async`
+## 滾動部署
 
-## `service_base.go`
+`tcpregistry.Registry.Drain(ctx, timeout, interval)` 對實作 `Drainer` 的 owner 呼叫 `StopAccepting()`（關 listener、`/ready` 轉為失敗、既有連線保留），等待連線自然結束；回傳逾時時仍存活的 socket 數。主動連出的 client 不列入等待。`DrainService` 只排空單一 owner。
 
-`serviceBase` 是 `Server` 與 `Client` 的共用底層。
+## 診斷
 
-### 結構
+### 指標
 
-- `type serviceBase struct`
-  主要欄位：
-  - `baseApp`
-    對應 app runtime，用來拿 `GetID()`、`GetContext()`、事件 channel。
-  - `sockets`
-    這個 service 名下的所有連線。
-  - `dispatcher`
-    收到訊息後把 handler 丟去哪裡跑。
-  - `coder`
-    封包編解碼器。
-  - `transport`
-    真正做 `Listen` / `Dial` 的抽象。
-  - `sendCh`
-    service 層級的送包 queue。
-  - `msgFactories` / `msgHandlers`
-    以 `MsgID` 為索引的訊息工廠與 handler 表。
-
-- `type socketFactory`
-  socket 建立函式型別，方便測試注入假 socket。
-
-### 函式
-
-- `newServiceBase(...)`
-  初始化共用基底。
-
-- `initSockets()`
-  建立 `Sockets` 容器。
-
-- `GetAppID()`, `GetName()`
-  取 app ID / service name。
-
-- `markClosed()`, `stop()`
-  標記 service 關閉並停止背景 queue。
-
-- `SetSocketFactory(...)`
-  替換 socket 建立方式，主要給測試。
-
-- `SetEventDispatcher(...)`
-  替換事件派發器。
-
-- `SetCoder(...)`
-  替換 message coder。
-
-- `SetTransport(...)`
-  替換 listen/dial 實作。
-
-- `transportValue()`
-  取有效 transport；沒設時回全域預設。
-
-- `createSocket(...)`
-  用目前的 `socketFactory` 建出 socket。
-
-- `runAsync(f)`
-  啟 background goroutine 並記錄 waitgroup。
-
-- `sendAsync()`
-  啟 service 層級送包 loop，從 `sendCh` 取工作執行。
-
-- `enqueue(f)`
-  把送包工作排進 queue。
-
-- `SendAll`, `Send`, `SendByID`
-  封裝成非同步工作，再交給 `Sockets` 實際送出。
-
-- `Get`, `GetByID`, `GetRandom`
-  從 `Sockets` 容器查 socket。
-
-- `AddNewMsg(new, event)`
-  把某個 `MsgID` 對應的 factory / handler 註冊進 service。
-  `Socket.receiveLoop()` 解包後就是靠這裡找到 handler。
-
-- `GetMsgFactory(id)`, `GetMsgHandler(id)`
-  取回對應訊息工廠與 handler。
-
-- `Async(f)`
-  開 background goroutine。
-
-## `server.go`
-
-### 結構
-
-- `type Server struct`
-  `serviceBase` 之上的 server 實作，增加：
-  - `listenIPInfo`
-  - `allowedIPs`
-  - `listener`
-
-### 函式
-
-- `newServer(...)`
-  建立 server。
-
-- `GetAllowedIPs()`, `SetAllowedIPs(...)`, `AddAllowedIPs(...)`
-  控制允許連入的 IP 白名單。
-
-- `isAllowedIP(ip)`
-  檢查某個 IP 是否可連入。
-
-- `Connect(sock)`
-  server 側 socket 建立完成後觸發：
-  - 打 log
-  - 呼叫上層 `IServiceEvent.Connect`
-
-- `Disconnect(sock)`
-  server 側 socket 中斷後觸發：
-  - 從 `Sockets` 移除
-  - 呼叫上層 `IServiceEvent.Disconnect`
-
-- `Init(s)`, `Destroy(s)`
-  對應 service 啟動/結束時呼叫上層 lifecycle。
-
-- `Start()`
-  入口。解析 listen address、建立 socket 容器、啟 background loop。
-
-- `start()`
-  啟送包 goroutine，並另開 goroutine 跑 `runServer()`。
-
-- `Close()`, `close()`
-  關閉 server、listener、所有 socket。
-
-- `prepareListen()`
-  從設定讀出 `listen.<service>.ip`。
-
-- `runServer()`
-  server 主流程：
-  - `Init`
-  - `listen`
-  - `acceptLoop`
-  - wait 所有 goroutine
-  - `Destroy`
-
-- `listen()`
-  實際呼叫 transport 開 listener。
-
-- `startAcceptLoop()`, `acceptLoop()`
-  持續 `Accept()` 新連線。
-
-- `logAcceptErr(err)`
-  accept 出錯時記錄 log。
-
-- `handleConn(conn, err)`
-  接到新連線後：
-  - 建 socket
-  - 做 allow IP 檢查
-  - 加入 `Sockets`
-  - 啟 session loop
-
-- `createAndStartSocket(conn)`
-  建立 socket 並 `Start()`。
-
-- `allowConn(sock)`
-  檢查遠端 IP 是否符合 allow list。
-
-- `addSocket(sock, err)`
-  把 socket 註冊進 `Sockets`。
-
-- `startSocketSession(sock)`, `runSocketSession(sock)`
-  每條連線的生命週期管理：
-  - `Connect`
-  - `sock.Wait()`
-  - `Disconnect`
-
-- `Kick(id)`
-  依 socket ID 強制斷線。
-
-- `SendAll`, `Send`, `SendByID`, `Get`, `GetByID`, `GetRandom`, `AddNewMsg`, `GetMsgFactory`, `GetMsgHandler`, `Async`, `SetSocketFactory`, `SetEventDispatcher`, `SetCoder`, `SetTransport`
-  都是把 `serviceBase` 的能力轉出來。
-
-## `client.go`
-
-### 結構
-
-- `type Client struct`
-  `serviceBase` 之上的主動撥號端，增加：
-  - `reConnectSecond`
-    舊版固定秒數重連配置
-  - `reconnectPolicy`
-    新版策略介面
-  - `allowedIPs`
-    目前主要用於地址檢查輔助
-  - `dialIPInfos`
-    從設定讀出的目標位址清單
-
-### 函式
-
-- `newClient(...)`
-  建立 client。
-
-- `CheckAndGetAllowedIPs(ip)`
-  從 `allowedIPs` 中找匹配地址，常見於檢查來路。
-
-- `Connect(sock)`, `Disconnect(sock)`
-  與 `Server` 類似，差別是 log 字段偏向 dial 端。
-
-- `Init(s)`, `Destroy(s)`
-  client 啟動/結束 lifecycle。
-
-- `SetReConnectSecond(value)`
-  設定固定重連間隔。
-
-- `SetReconnectStrategy(policy)`
-  指定完整重連策略。
-
-- `reconnectStrategy()`
-  回傳當前有效策略：
-  - 先看 `reconnectPolicy`
-  - 否則看 `reConnectSecond`
-  - 最後預設 5 秒 `FixedBackoff`
-  這裡回傳的是 `pkg/tcpclient` 內部的 strategy（原 `pkg/reconnect.Strategy`，已整併）。
-
-- `Start()`
-  入口。解析 dial addresses、建立 socket 容器、開始 client 主流程。
-
-- `start()`
-  啟送包 goroutine 與 `runClient()`。
-
-- `Close()`, `close()`
-  關閉 client 與所有 socket。
-  現在也會停止後續重連。
-
-- `prepareDial()`
-  從設定讀出 `dial.<service>.*.ip`。
-
-- `runClient()`
-  client 主流程：
-  - `Init`
-  - 啟動單一 `dialLoop`
-  - 等 goroutine 結束
-  - `Destroy`
-
-- `startDialLoop()`, `dialLoop()`
-  單一重連迴圈，失敗時按順序切換下一個候選位址。
-
-- `dialWithRetry(policy)`
-  持續重試撥號直到 service 關閉。多個候選位址時，依序 failover。
-
-- `dialOnce(addr, policy, sock, attempt)`
-  單次撥號：
-  - 失敗就 sleep/backoff
-  - 成功就進 `handleDialSuccess`
-
-- `handleDialSuccess(...)`
-  成功後：
-  - 舊 socket 若存在先關掉
-  - 建新 socket
-  - 加入 `Sockets`
-  - 跑 session
-  - session 結束後依策略決定下次延遲
-
-- `shouldStop()`
-  判斷 client 是否已關閉。
-
-- `waitOrStop(delay)`
-  等待重試延遲，但若 client 關閉則提早返回。
-
-- `createAndStartSocket(conn)`, `addSocket(sock)`, `runSession(sock)`
-  和 server 類似。
-
-- `Kick(id)`
-  依 ID 強制關閉對應 socket。
-
-- 其餘 `Send*`、`Get*`、`AddNewMsg`、`Set*`
-  都是轉發到 `serviceBase`。
-
-## `tcpsocket/socket.go`
-
-`Socket` 是最核心的一層，代表單條 TCP 連線。
-
-### 結構與介面
-
-- `type IPInfo struct`
-  地址資訊：
-  - `ID`
-    這個目標節點的邏輯 ID
-  - `TCPAddr`
-    解析後的 TCP 位址
-
-- `type ISocket interface`
-  給 service / handler 操作 socket 的統一介面。
-
-- `type Socket struct`
-  主要欄位：
-  - `key`
-    每條連線的唯一字串 key
-  - `id`
-    業務邏輯上的節點/玩家 ID，可在握手後再設定
-  - `conn`
-    實際 net.Conn
-  - `sendCh`
-    socket 專屬送包 queue
-  - `buffer`
-    讀取用 buffer
-  - `dispatcher`
-    收到訊息後如何派發 handler
-  - `coder`
-    編解碼器
-  - `IService`
-    這條 socket 隸屬哪個 service
-  - `msgFactory`
-    根據 `MsgID` 建 message instance 的抽象
-
-- `type messageFactory interface`
-  封裝 `Create(enum.MsgID)`。
-
-- `type serviceMessageFactory struct`
-  預設實作，實際上就是去問 `IService.GetMsgFactory(id)`。
-
-- `type FakerSocket struct`
-  假 socket，主要用於測試/占位。
-
-### 函式
-
-- `NewSocket(...)`
-  對外建立 socket 的工廠。
-
-- `serviceMessageFactory.Create(id)`
-  依 `MsgID` 找 factory 並建立 message instance。
-
-- `GetConn`, `GetBuffer`, `GetKey`, `SetKey`, `GetID`, `SetID`, `SetData`, `GetData`, `RemoteAddr`, `LocalAddr`
-  基本 getter/setter。
-
-- `sessionLabel()`, `sessionValue()`
-  內部 log helper，決定用 key 還是 ID 表示這條 session。
-
-- `isClosedVal()`, `serviceName()`, `coderValue()`
-  內部 helper。
-
-- `logMessage(action, msg)`
-  用 debug log 記錄 pack/unpack 訊息。
-
-- `Start()`
-  啟兩個 goroutine：
-  - `receiveLoop()`
-  - `sendLoop()`
-
-- `Close()`, `close()`
-  關閉 socket：
-  - 標記 closed
-  - 往 `sendCh` 塞 `nil` 讓 send loop 結束
-  - 關 conn
-
-- `Wait()`
-  等 send/receive goroutine 收尾。
-
-- `setReadDeadline()`, `setWriteDeadline()`
-  套用讀寫 timeout。
-
-- `receiveAsync()`, `sendAsync()`
-  啟動 goroutine。
-
-- `SendMsg(msg)`
-  往 socket 送包 queue 塞 message。
-  `nil` 代表結束送包 loop。
-
-- `PushEvent(fn) bool`
-  把 `fn` 包成事件送入統一事件迴圈；回傳 `false` 代表未送入（無事件佇列、連線已關閉，或玩家連線佇列滿被關閉），`fn` 不會執行，呼叫端須自行收尾（例如結束 span、記錄丟棄）。S2S 連線佇列滿時阻塞等待（背壓）。
-
-- `Async(f)`
-  在 socket waitgroup 下跑 background goroutine。
-
-- `handleIncoming(id, b)`
-  收到 payload 後：
-  - 建 message instance
-  - `Unpack`
-  - 找 handler
-  - 經 dispatcher 派發
-
-- `handleOutgoing(msg)`
-  送出前：
-  - encode
-  - write
-
-- `newSocket(...)`
-  真正建立 `Socket` struct，並初始化 `sendCh`、buffer、factory。
-
-- `newSocketKey()`
-  產生隨機 16-byte hex key。
-
-- `receiveLoop()`
-  持續呼叫 `receiveOnce()`，失敗後關 socket。
-
-- `receiveOnce()`
-  單次收包：
-  - 設 read deadline
-  - `coder.Decode`
-  - 檢查 closed
-  - 若 payload 有值就交給 `handleIncoming`
-
-- `handleDecodeError(err)`
-  EOF 以外的 decode error 會記 log。
-
-- `sendLoop()`
-  從 `sendCh.Out` 持續讀取訊息送出。
-
-- `sendOnce(msg)`
-  單次送包；若失敗就關 socket。
-
-- `createMessage(id)`
-  依 `MsgID` 建立對應 message instance。
-
-- `getMessageHandler(id)`
-  向 service 取出 handler。
-
-- `unpackMessage(id, msg, b)`
-  呼叫 `msg.Unpack`，失敗則記 log。
-
-- `encodeOutgoing(msg)`
-  `msg.Pack()` 後交給 coder 包成 wire format。
-
-- `writeOutgoing(b)`
-  真正寫進 `net.Conn`。
-
-- `FakerSocket.*`
-  全部只是 dummy 實作。
-
-## `tcpsocket/sockets.go`
-
-`Sockets` 是某個 service 底下的多連線容器。
-
-### 介面與結構
-
-- `type ISockets interface`
-  定義 socket 集合該有的能力。
-
-- `type Sockets struct`
-  主要資料結構：
-  - `sockets`
-    key -> socket
-  - `socketsByID`
-    id -> socket
-  - `activeKeys` / `activeIndex`
-    為 `GetRandom()` 維護的活躍 key 索引
-
-### 函式
-
-- `newSockets()`
-  建立容器。
-
-- `AddNew(c)`
-  新增 socket。
-  若 key 空白會自動補 key。
-
-- `Delete(key)`
-  依 key 移除 socket。
-
-- `DeleteByID(id)`
-  依 ID 移除 socket。
-
-- `Get(key)`
-  依 key 查。
-
-- `GetByID(id)`
-  依 ID 查。
-  若 `socketsByID` 過期，會回掃 `sockets` 重建索引。
-
-- `findKeyByIDLocked(id)`
-  lock 內部版的 ID -> key 查找。
-
-- `indexSocketLocked(key, socket)`
-  把 socket 加進：
-  - 活躍 key 索引
-  - ID 索引
-
-- `removeSocketLocked(key)`
-  從所有索引中刪除該 socket。
-
-- `Set(key, c)`
-  覆蓋或寫入 socket。
-
-- `Clear()`
-  清空索引，不主動關 socket。
-
-- `SendAll(msg)`
-  對所有 socket 廣播。
-  這裡會把原訊息 `Pack()` 成 payload，再包成 `MsgPreprocess` 給每個 socket，避免重複做完整 struct pack。
-
-- `Send(key, msg)`
-  對單一 key 發送。
-
-- `SendByID(id, msg)`
-  對單一 ID 發送。
-
-- `Close()`
-  關掉全部 socket，並清掉所有索引。
-
-- `GetRandom()`
-  從活躍 key 中隨機挑一條 socket。
-
-- `IsNil(key)`
-  只是 `Get(key) == nil` 的包裝。
-
-- `packWithPool(b)`
-  payload copy helper，目前在這份程式碼裡沒有實際被主流程使用。
-
-## `tcpsocket/coder.go`
-
-### 介面與結構
-
-- `type MessageCoder interface`
-  最基本編解碼介面：
-  - `Encode`
-  - `Decode`
-
-- `type PooledMessageCoder interface`
-  支援 pooled encode。
-
-- `type PooledMessageDecoder interface`
-  支援 pooled decode。
-
-- `type Coder struct`
-  預設實作。
-
-Wire 格式、範例與限制統一見[framecodec 封包格式](framecodec封包格式.md)，本文件只保留 `tcpsocket.Coder` 的 API。
-
-### 函式
-
-- `DefaultCoder()`
-  取目前全域預設 coder。
-
-- `SetDefaultCoder(c)`
-  替換全域預設 coder。
-
-- `(r *Coder) Encode(...)`
-  普通編碼版本，內部實際呼叫 `EncodePooled()` 再 copy 一份。
-
-- `(r *Coder) EncodePooled(...)`
-  用 packet pool 建立封包，減少暫時物件。
-
-- `(r *Coder) DecodePooled(reader)`
-  pooled 版解碼，回傳 release func。
-
-- `(r *Coder) Decode(reader, b)`
-  一般解碼：
-  - 讀 size
-  - 讀 msg id
-  - 讀 payload
-
-## `msg_codec.go`
-
-這些都是訊息 pack / unpack 的輔助函式。
-
-- `packMsg(v)`
-  把 struct pack 成 bytes。
-
-- `unpackMsg(v, b)`
-  從 bytes unpack 到 struct。
-
-- `packMsgWith(...)`, `unpackMsgWith(...)`
-  可指定 pack/unpack 策略的泛型 helper。
-
-- `packMsgTo(v, buf)`
-  寫進 buffer。
-
-- `unpackMsgFrom(v, buf)`
-  從 buffer 讀出。
-
-## `pkg/msgpool`
-
-- `MsgPool[T]`
-  泛型訊息池。
-
-- `MsgBase[T]`
-  訊息基底型別，共用 `GetMsgID` / `Pack` / `Unpack` / `Put`。
-
-- `NewMsgPool(newFn)`
-  建立 message pool。
-
-這是 handler 端最常碰到的 API。
-
-## `config.go`
-
-- `ServerOptionsFromConfig()`
-  共用的啟動 helper，從 viper 讀取 TCP runtime 設定：
-  - `tcp.rate_limit_per_second`
-  - `tcp.rate_limit_burst`
-  - `tcp.max_connections`
-  - `tcp.socket_send_queue_depth`
-
-  只接受正值；`0` 或負值會回落到預設值，避免壞設定把 rate limit / 連線上限弄壞。
-
-- `resolveListenAddr(appID, serviceName)`
-  從 viper 讀取：
-  - `<appID>.listen.<serviceName>.ip`
-
-- `resolveDialAddrs(appID, serviceName)`
-  從 viper 讀取：
-  - `<appID>.dial.<serviceName>.*.ip`
-
-  回傳的是 `[]IPInfo`，其中 `ID` 來自設定 key。
-  壞 entry 會被跳過；只有全部都壞掉時才回錯，避免單筆髒設定拖垮整個 client 啟動。
-
-## `tcpclient` 的 reconnect
-
-### 介面與結構
-
-- `type Strategy interface`
-  client 斷線後如何決定下次重試間隔。
-
-- `type FixedBackoff struct`
-  固定間隔。
-
-- `type ExponentialBackoff struct`
-  指數退避。
-
-### 函式
-
-- `FixedBackoff.NextDelay()`
-  無論重試幾次都回同一個 interval。
-
-- `FixedBackoff.Reset()`
-  無狀態，什麼都不做。
-
-- `ExponentialBackoff.NextDelay()`
-  依指數退避規則計算，並受最大值限制。
-
-- `ExponentialBackoff.Reset()`
-  無狀態，什麼都不做。
-
-- `NewDefaultReconnectStrategy()`
-  建立預設的指數退避策略。
-
-- `NewExponentialBackoff(base, max, multiplier, jitter)`
-  建立可自訂參數的指數退避策略。
-
-## `transport.go`
-
-### 介面與結構
-
-- `type Transport interface`
-  抽象 `Listen` / `Dial`。
-
-- `type netTransport struct{}`
-  預設實作，直接呼叫 `net.Listen` / `net.Dial`。
-
-### 函式
-
-- `(netTransport) Listen(...)`
-  真正 listen。
-
-- `(netTransport) Dial(...)`
-  真正 dial。
-
-- `SetTransport(t)`
-  替換全域 transport。
-  常用於測試，把真網路換成 fake transport。
-
-## 你最常用的入口
-
-如果你是寫上層業務，大多只會直接碰這些：
-
-- `tcpregistry.NewRegistry()`
-- `registry.NewService(...)`
-- 各 handler 套件內的 local `addMsg(...)`
-- `svc.Send(...)`
-- `svc.SendByID(...)`
-- `svc.GetByID(...)`
-- `svc.GetRandom()`
-- `sock.SendMsg(...)`
-- `sock.SetID(...)`
-
-## 比較內部、通常不用直接碰的部分
-
-- `serviceBase`
-- `newServer`, `newClient`
-- `Socket.receiveLoop/sendLoop`
-- `Sockets.indexSocketLocked/removeSocketLocked`
-- `packMsgWith`, `unpackMsgWith`
-- `serviceMessageFactory`
-
-這些比較像 runtime 內部實作細節。
-
-## 目前值得注意的設計點
-
-- `Socket` 的 handler 派發是靠 `dispatcher`，所以收到包後不一定立刻在同一 goroutine 執行。
-- `Sockets.GetByID()` 會容忍 ID 索引過期，必要時會回掃全部 socket 重建。
-- `Client` 現在 `Close()` 後會停止重連，這對測試與程序關閉很重要。
-- `SendAll()` 會把 payload 轉成 `MsgPreprocess` 再送，避免重複對同一 struct 做完整 pack。
-- `AddNewMsg()` 是用 `MsgID` 直接做陣列索引，所以 `MsgID` 必須落在 `uint16` 範圍內。
-
-## 建議閱讀順序
-
-如果你要真的讀懂這個套件，建議順序是：
-
-1. `service.go`
-2. `service_base.go`
-3. `server.go` / `client.go`
-4. `tcpsocket/socket.go`
-5. `tcpsocket/sockets.go`
-6. `tcpsocket/coder.go`
-7. `config.go` / `reconnect.go` / `transport.go`
-
-這樣最容易從外層入口一路看到封包收發細節。
+| 指標 | 說明 |
+|------|------|
+| `tcp_connections_active`、`tcp_connections_total` | 依 `service`（owner 名稱）計 |
+| `tcp_messages_sent_total`、`tcp_messages_received_total` | 收送訊息數 |
+| `tcp_send_queue_depth`、`tcp_send_queue_overflow_total` | socket 送出佇列深度與溢位關閉次數 |
+| `tcp_unknown_messages_total` | 未註冊訊息 |
+| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄 |
+| `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
+| `game_event_queue_overflow_total` | eventCh 滿 |
+| `game_msg_queue_dropped_total` | owner 廣播佇列滿 |
+| `game_service_hello_mismatch_total` | 發版身分不一致 |
+| `game_heartbeat_timeout_total` | 玩家心跳逾時 |
+
+### 協定紀錄
+
+`tcpdiag` 在收送時記錄 `ProtocolRecord`（時間、owner、方向 `recv`／`send`、狀態、msgID、requestID、traceID、socket key／ID、位址、錯誤，選擇性含 payload），由 debug HTTP 的 `/diag/protocol`（`debug.ProtocolDiagPath`）查詢，可依 traceID／requestID 過濾（`tcpdiag.FilterRecords`）。
+
+開關（`pkg/startup/runtime.go`，熱重載後仍有效）：
+
+- 啟用：旗標 `-protocol-record` > 環境變數 `DEBUG_PROTOCOL_RECORD` > 設定 `protocol_record_enabled`
+- payload：`protocol_record_payload_enabled` 允許時，再由 `DEBUG_PROTOCOL_RECORD` 決定
+- 容量與保留：`protocol_record_limit`、`protocol_record_ttl`；落檔目錄 `protocol_record_file_dir`
+
+### 日誌
+
+- `socket close`（Info；debug 等級另含呼叫鏈 `callers`）、`connect`／`disconnect`（Info，含 key 與位址）
+- `send queue overflow, closing socket`、`event queue overflow, closing socket`、`rate limit exceeded, closing connection`、`unknown message dropped`（Warn）
+- `S2S authentication rejected`、`S2S node reconnected, closing its previous connection`（Warn）、`service hello mismatch, closing socket`（Error）
+- `dialing`、`dial error`（client）、`accept error, retrying`（server）
