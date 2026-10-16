@@ -80,7 +80,8 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
 - 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
 - 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/`、`lobby-4001/` 分別唯讀掛載到各服務的 `/run/secrets`（Chat、Lobby 也以 S2S 連 Central 60003／60004 接收遊戲時間）；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
-- 正式環境不傳 `FAULT_INJECT`；`go run ./tools/configaudit` 會檢查。
+- debug 端點（`/metrics`、`/ready` 等）的來源白名單由 `DEBUG_ALLOW_CIDRS` 決定，compose 會自動在後面接上 `PROD_NETWORK_SUBNET`（預設 `172.30.0.0/24`），讓 Prometheus 容器抓得到 `/metrics`。改了 `PROD_NETWORK_SUBNET` 不必另改白名單；若在設定檔或其他地方手寫 `allowed_cidrs`，須與 `PROD_NETWORK_SUBNET` 同步，否則抓取失敗觸發 `GameServiceDown`。
+- 正式環境不傳 `FAULT_INJECT`；`go run ./tools/pja configaudit` 會檢查。
 - 告警通知：`monitoring` profile 含 Alertmanager，告警送往 `ALERTMANAGER_SECRET_DIR`（預設 `./alertmanager-secrets`，相對於 compose 檔目錄）下 `webhook_url` 檔案內的 URL（單行，例如團隊聊天室或值班系統的接收端）。目錄或檔案不存在時告警只會留在 Alertmanager 介面（`127.0.0.1:9093`），不會通知任何人；該目錄已列入 `.gitignore`。
 - Prometheus 時序資料放在具名資料卷 `prod-prometheus-data`，重建容器不會清空；保留期由 `PROMETHEUS_RETENTION` 控制（預設 `15d`）。
 
@@ -256,7 +257,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 - 受管 MySQL / Redis
 - 多節點部署
 - 自動備份與 restore 演練
-- CI/CD 自動發版
+- staging 環境（CD 已預留 job，見 [Docker發版流程](./Docker發版流程.md#10-gitlab-自動發版cd)）
 
 ## 9. 建議順序
 
