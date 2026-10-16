@@ -42,7 +42,7 @@ CONFIRM_RESTORE=yes ./scripts/docker-restore-mysql.sh backups/mysql/mysql-202603
 或直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerrestoremysql -DockerRestoreMysqlInputFile backups/mysql/mysql-20260324-120000.sql.gz
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrestoremysql -DockerRestoreMysqlInputFile backups/mysql/mysql-20260324-120000.sql.gz
 ```
 
 注意：
@@ -72,7 +72,7 @@ CONFIRM_RESTORE=yes ./scripts/docker-restore-redis.sh backups/redis/redis-202603
 或直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerrestoreredis -DockerRestoreRedisInputFile backups/redis/redis-20260324-120000.tar.gz
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrestoreredis -DockerRestoreRedisInputFile backups/redis/redis-20260324-120000.tar.gz
 ```
 
 注意：
@@ -101,7 +101,7 @@ database schema 的向前遷移是 release manifest 的一部分。舊版 server
 若只想先把兩份備份打出來，也可以直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerbackup
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerbackup
 ```
 
 ## 建議下一步

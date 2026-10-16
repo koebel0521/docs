@@ -37,7 +37,7 @@ World 會從容器內的 `config/data` 載入棋盤與效果資料；`compose.fu
 或直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerfullup
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerfullup
 ```
 
 或直接：

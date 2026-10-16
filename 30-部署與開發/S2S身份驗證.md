@@ -240,7 +240,7 @@ Windows 原生排程預設只輸出 XML，供檢閱；加 `-Install` 才註冊�
 ./scripts/check-s2s-dev-secrets.ps1
 python -B scripts/check-s2s-distribution.py --source C:/private/test-s2s
 python -B scripts/check-s2s-maintenance.py
-./scripts/check-s2s-docker.ps1
+./scripts/private/check-s2s-docker.ps1
 ```
 
 分發檢查需要以開發產生器建立含 Gate 2001、World 1001 的隔離來源。維護檢查自行建立與刪除暫存機密，驗證有效授權輪替、撤銷不復活、續期簽章及分發失敗重試。完整 Docker 檢查建立專用 Compose 專案，啟動 12 個服務、不發布主機端口；確認四條 S2S、跨目的 token 拒絕、重複身份拒絕、單目的輪替重連及撤銷。預設結束關閉專用容器，保留測試資料卷與暫存機密供查核；此腳本會修改指定的來源，不能指向正式目錄。

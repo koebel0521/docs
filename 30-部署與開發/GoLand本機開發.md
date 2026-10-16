@@ -23,7 +23,7 @@
 或直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerdepsup
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerdepsup
 ```
 
 或直接：

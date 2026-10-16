@@ -63,13 +63,13 @@
 或直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerrelease -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrelease -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
 ```
 
 若只是先產審批 stamp，也可以先跑：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode changeapproval -ChangeApprovalChangeType release -ChangeApprovalTarget 1.0.0 -ChangeApprovalOwner alice
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode changeapproval -ChangeApprovalChangeType release -ChangeApprovalTarget 1.0.0 -ChangeApprovalOwner alice
 ```
 
 這個腳本會：
@@ -82,8 +82,8 @@ powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode chan
 若只想分開跑，也可以直接走統一入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerbuild -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
-powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode dockerpush -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerbuild -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerpush -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
 ```
 
 ## 4. deploy 主機更新內容
