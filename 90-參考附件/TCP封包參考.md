@@ -236,9 +236,9 @@ svc := tcpclient.NewClient(name, baseApp, ownerEvent,
 ### Client 端
 
 1. `Client.Start()` → `RunLifecycle(prepareDial, runClient)`：`prepareDial` 以 `tcpconfig.DialAddrs` 取得已排序的位址清單
-2. `dialLoop` 先等 1 秒，接著 `dialWithRetry`：同一時間只有一條 dial goroutine、一條連線
+2. `dialLoop` 先等 1 秒，接著 `dialWithRetry`：預設是**備援模式**，同一時間只有一條 dial goroutine、一條連線，位址清單依序嘗試；指定 `WithDialAll()` 且位址多於一個時改為**全連模式**：`runClient` 為每個位址啟動一個獨立的 `dialTargetLoop`，各自維持一條連線、各自退避重連（Gate 連 World 使用全連模式，見[系統導讀](../00-導讀/系統導讀.md#gate-與-world-的連線)）
 3. 每次 dial：`tcp_reconnect_attempts_total` +1；有 `DialHandshake[name]` 時做 S2S 握手
-4. 失敗：`tcp_reconnect_total{result="fail"}` +1，依退避等待後換下一個位址（round-robin）
+4. 失敗：`tcp_reconnect_total{result="fail"}` +1，依退避等待後換下一個位址（round-robin）；全連模式則留在同一個位址重試，失敗後重新解析設定並取同一個序位
 5. 成功：`tcp_reconnect_total{result="success"}` +1，退避重設，`ServeConn(conn, 0)` 阻塞到斷線；斷線後等一次退避間隔（重設後約 1 秒）再連同一位址
 6. `Close()` 後迴圈結束，不再重連
 
