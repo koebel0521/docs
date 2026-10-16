@@ -107,7 +107,7 @@ AUTO_MIGRATE_DISABLED=true
 設定後，以下三個啟動時期的 AutoMigrate 會被跳過：
 
 - `Central` → `user_record` 表
-- `Chat` → `chat_messages` 表
+- `Chat` → `chat_message` 表
 - `World` → `player_item` 表
 
 Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，它只會建立自己的事件分表。
@@ -160,11 +160,14 @@ ALTER TABLE player_board_building DROP FOREIGN KEY fk_player_board_building_boar
 REGISTRY=registry.example.com/project IMAGE_TAG=1.0.0 ./scripts/docker-build-images.sh
 ```
 
-這會 build：
+這會 build 六個映像：
 
 - `project-central`
 - `project-world`
 - `project-gate`
+- `project-chat`
+- `project-lobby`
+- `project-record`
 
 ## 3. 推 image
 
@@ -226,9 +229,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 2. push 新 tag
 3. 修改 `.env.prod` 內的：
    - `IMAGE_TAG`
-   - `CENTRAL_IMAGE`
-   - `WORLD_IMAGE`
-   - `GATE_IMAGE`
+   - `CENTRAL_IMAGE`／`WORLD_IMAGE`／`GATE_IMAGE`／`CHAT_IMAGE`／`LOBBY_IMAGE`／`RECORD_IMAGE`
 4. 重新部署：
 
 ```bash

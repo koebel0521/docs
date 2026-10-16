@@ -18,7 +18,7 @@
 
 原則：
 
-1. 同一次 release，`central / world / gate` 使用同一個 tag
+1. 同一次 release，`central / world / gate / chat / lobby / record` 六個服務使用同一個 tag
 2. production 不直接部署 `latest`
 3. rollback 時回到上一個已知穩定 tag
 
@@ -29,6 +29,9 @@
 - `project-central:<tag>`
 - `project-world:<tag>`
 - `project-gate:<tag>`
+- `project-chat:<tag>`
+- `project-lobby:<tag>`
+- `project-record:<tag>`
 - 對應 commit id
 - deploy 時使用的 `.env.prod` 版本紀錄
 - `pkg/release/release.json`（發版名稱、server commit、協定版號與 schema 指紋、設定版本與序號、設定契約、database schema；建置時嵌入每個服務，格式見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md)）
@@ -38,8 +41,8 @@
 
 ### 手動步驟
 
-1. 決定版本號；`go run ./tools/releasemanifest generate -release <tag> -commit <SHA>` 依實際產物寫出 `release.json`
-2. `go run ./tools/releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）
+1. 決定版本號；`go run ./tools/pja releasemanifest generate -release <tag> -commit <SHA>` 依實際產物寫出 `release.json`
+2. `go run ./tools/pja releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）
 3. build image
 4. push image
 5. 完成 MySQL backup / snapshot
@@ -72,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/p0-daily-check.ps1 -Mode chan
 這個腳本會：
 
 1. 設定 `IMAGE_TAG`
-2. 驗證 `release/<tag>.yaml`
+2. 檢查升級窗口鎖與變更審批戳記，再以 `go run ./tools/pja releasemanifest generate`／`verify` 依實際產物寫出並驗證 `pkg/release/release.json`（嵌入映像；腳本結束後還原該檔）
 3. 執行 [docker-build-images.sh](../../scripts/docker-build-images.sh)
 4. 執行 [docker-push-images.sh](../../scripts/docker-push-images.sh)
 
@@ -92,6 +95,9 @@ release 完成後，deploy 主機至少要更新：
   - `CENTRAL_IMAGE`
   - `WORLD_IMAGE`
   - `GATE_IMAGE`
+  - `CHAT_IMAGE`
+  - `LOBBY_IMAGE`
+  - `RECORD_IMAGE`
 
 例如：
 
@@ -100,6 +106,9 @@ IMAGE_TAG=1.0.0
 CENTRAL_IMAGE=registry.example.com/project/project-central:1.0.0
 WORLD_IMAGE=registry.example.com/project/project-world:1.0.0
 GATE_IMAGE=registry.example.com/project/project-gate:1.0.0
+CHAT_IMAGE=registry.example.com/project/project-chat:1.0.0
+LOBBY_IMAGE=registry.example.com/project/project-lobby:1.0.0
+RECORD_IMAGE=registry.example.com/project/project-record:1.0.0
 ```
 
 同時建議把下列 trace 一起留存：
@@ -110,7 +119,7 @@ GATE_IMAGE=registry.example.com/project/project-gate:1.0.0
 - manifest path/hash
 - release 時間
 
-`scripts/docker-release.sh` 會把這些資訊寫到 `.run/release/<tag>.txt`。
+`scripts/docker-release.sh` 會把這些資訊與 releasemanifest 驗證結果寫到 `.run/release/<tag>.txt`，並留一份 `.run/release/<tag>.release.json`。
 
 ## 5. deploy 指令
 
@@ -152,6 +161,9 @@ IMAGE_TAG=0.9.9
 CENTRAL_IMAGE=registry.example.com/project/project-central:0.9.9
 WORLD_IMAGE=registry.example.com/project/project-world:0.9.9
 GATE_IMAGE=registry.example.com/project/project-gate:0.9.9
+CHAT_IMAGE=registry.example.com/project/project-chat:0.9.9
+LOBBY_IMAGE=registry.example.com/project/project-lobby:0.9.9
+RECORD_IMAGE=registry.example.com/project/project-record:0.9.9
 ```
 
 然後再跑：
@@ -188,3 +200,28 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 - 不記錄 commit 與 image tag 對應
 - deploy 後不跑 smoke test
 - rollback 只憑印象，不憑版本
+
+## 10. GitLab 自動發版（CD）
+
+推 `vX.Y.Z` 標籤（請設為 Protected tag）後，`.gitlab-ci.yml` 依序執行：
+
+1. 既有檢查全部通過，`release-info` 產出 `release.json`。
+2. `build-images`：建置並推送六個映像（tag 為去掉 `v` 的版本號）。
+3. `deploy-staging`：預留。目前無第二台主機，設定 `STAGING_ENABLED=true` 與 `STAGING_ENV_FILE` 才啟用。
+4. `deploy-production`：手動按下後執行 [ci-deploy.sh](../../scripts/ci-deploy.sh)。
+
+`ci-deploy.sh` 預期關服維護，流程固定：
+
+1. 先拉新映像，備份 MySQL。
+2. 停止六個服務（整批替換，不跨發版混跑）。
+3. 發布 `config/data` 設定 artifact。World 啟動會比對 `current.json` 與映像內的 `release.json`，兩者必須同批更新，因此設定隨發版自動發布。
+4. 執行 DB migration，更新 `.env.prod` 的映像 tag，啟動並等待六個服務 healthy。
+5. 任一步失敗：映像與設定 artifact 退回上一版，資料庫不還原。
+
+自動發布只處理一般設定變更。拓樸或變數 migration（需 `-topology-migration`、`-variable-migration` 與離線搬遷）仍須依 [配置Artifact發布與回退](配置Artifact發布與回退.md) 手動處理，自動發布遇到會失敗並回退。
+
+需要的設定：
+
+- Runner：部署主機安裝 gitlab-runner（shell executor，標籤 `deploy`），具備 docker、git、bash、flock；Go 由 golang 容器提供，不需安裝。
+- CI/CD 變數（Protected）：`PROD_ENV_FILE`（`.env.prod` 的絕對路徑）；`REGISTRY`（未設定時使用 GitLab Container Registry）。
+- 部署主機以 `git submodule` 取得 `deps/PJA-Database`（job 已設 `GIT_SUBMODULE_STRATEGY: recursive`）。
