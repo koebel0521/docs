@@ -91,7 +91,7 @@ type Msg interface {
 
 - `SendMsg` 之後訊息歸 socket，送完由 sendLoop `Put`；呼叫端不可再使用
 - 收到的訊息由 handler 事件執行完後 `Put`；handler 要跨 goroutine 保留資料須先複製
-- `msg.Raw`（`NewRaw`）建立時複製 payload，可多個 socket 共用，`Put` 為 no-op；`msg.OwnedRaw`（`TakeOwnedRaw`）只送單一 socket，交換緩衝不複製，送出後歸還池
+- `msg.OwnedRaw`（`TakeOwnedRaw`）只送單一 socket，交換緩衝不複製，送出後歸還池；原本可多 socket 共用的 `msg.Raw` 已無呼叫端，已移除
 - `msgsys.SharedHeartbeatReq` 是不回收的單例（pool 為 nil），心跳廣播重複送它
 
 ### PackTo 快速路徑
