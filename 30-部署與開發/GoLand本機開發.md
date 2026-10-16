@@ -79,7 +79,7 @@ GoLand 本機執行請使用：
   - `127.0.0.1:60004`（Lobby→Central，只接收 `TimeSync`）
   - `127.0.0.1:61001`
   - `127.0.0.1:62001`
-  - `127.0.0.1:63001`（Gate→Chat）
+  - `127.0.0.1:63201`（Gate→Chat）
 - `world` 會把一般事件異步送到 `record`
 
 ## GoLand Run/Debug Configuration
@@ -95,7 +95,7 @@ GoLand 開啟的專案根目錄應是 `PJA-Project`，`PJA-Server` 是其中的�
 - `Record`
 - Package：`local/server/cmd/record`
 - `User`
-- Package：`local/server/cmd/user`
+- Package：`local/server/tools/user`
 
 所有 configuration 共用以下設定：
 
