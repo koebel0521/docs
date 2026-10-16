@@ -48,7 +48,7 @@ LeastLoadedWorldID()
 
 1. 確認玩家離線（Central 記憶體沒有該玩家）。
 2. 更新 `user.world_id`。
-3. 執行 `go run ./tools/staterepair -clear-route -account <帳號> -confirm`，清掉 Central 的帳號快取與路由。
+3. 執行 `go run ./tools/private/pja staterepair -clear-route -account <帳號> -confirm`，清掉 Central 的帳號快取與路由。
 
 登入先查 Central 記憶體與 Redis 帳號快取（`central:account:{account}`，TTL 7 天）才回查 MySQL；
 略過第 3 步時，快取過期前登入都會導向舊 World。
