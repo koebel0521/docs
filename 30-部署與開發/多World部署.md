@@ -9,7 +9,7 @@ created: 2026-10-16
 
 ## 規則
 
-1. **每個 Gate 的 `dial.world` 必須列出所有 World。** Gate 對每個位址各維持一條連線（`tcpclient.WithDialAll()`），各自獨立重連；Gate 用玩家所在的 World ID 找到那條連線轉送。Central 指派新帳號的 World 時只看 World 是否連到 Central 與負載，**不看請求的那個 Gate 連到哪些 World**，所以少列一個 World，被指派到它的玩家就無法從該 Gate 登入。
+1. **每個 Gate 的 `dial.world` 必須列出所有 World。** Gate 對每個設定項目各維持一條連線（`tcpclient.WithDialAll()`），各自獨立重連，每條只撥自己的 `host:port`（撥號時才解析，World 換 IP 不會錯連別台）；Gate 用玩家所在的 World ID 找到那條連線轉送。Central 指派新帳號的 World 時只看 World 是否連到 Central 與負載，**不看請求的那個 Gate 連到哪些 World**，所以少列一個 World，被指派到它的玩家就無法從該 Gate 登入。
 2. **每個 World 要有不同的 `id`、監聽位址與 `public_addr`**，並且都連到同一個 Central。
 3. **帳號的 World 是固定的**（`user.world_id`）。World 掛掉時，綁在它上面的玩家無法改派到別的 World（記憶體狀態與寫回都在原 World）；其他 World 的玩家不受影響。
 4. **每個 World 一個獨立的 `game_store.spill_dir`**（關機時寫不進 MySQL 的玩家異動落地目錄），不要共用。
