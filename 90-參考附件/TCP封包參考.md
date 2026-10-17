@@ -161,7 +161,7 @@ type ServiceEvent interface {
 }
 ```
 
-各服務 handler 實作它：`Init` 註冊訊息，`Connect`／`Disconnect` 處理連線事件。`msgsys.ConnectInfoOnConnect` 可嵌入作為 S2S 的 `Connect` 預設實作。
+各服務 handler 實作它：`Init` 註冊訊息，`Connect`／`Disconnect` 處理連線事件。`s2shandshake.ConnectInfoOnConnect` 可嵌入作為 S2S 的 `Connect` 預設實作。
 
 ### 註冊 handler
 
@@ -176,7 +176,7 @@ tcpruntime.AddMsgHandler(svc, msgsys.NewHelloRequest, r.onHelloRequest)
 ### Server
 
 ```go
-svc := tcpserver.NewServer(name, baseApp, ownerEvent,
+svc := tcpserver.New(name, baseApp, ownerEvent,
 	tcpserver.WithConfig(tcpCfg),
 	tcpserver.WithWriteDeadTime(tcpsocket.PlayerWriteDeadline),
 	tcpserver.WithMaxFrameSize(gateUserMaxFrameSize),
@@ -206,7 +206,7 @@ socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即�
 ### Client
 
 ```go
-svc := tcpclient.NewClient(name, baseApp, ownerEvent,
+svc := tcpclient.New(name, baseApp, ownerEvent,
 	tcpclient.WithTCPConfig(tcpCfg),
 	tcpclient.WithReadDeadTime(...), tcpclient.WithWriteDeadTime(...))
 ```
@@ -223,11 +223,11 @@ svc := tcpclient.NewClient(name, baseApp, ownerEvent,
 
 ### Server 端
 
-1. `Server.Start()` → `OwnerBase.RunLifecycle(prepareListen, runServer)`：`prepareListen` 以 `tcpconfig.ListenAddr` 解析位址；成功後建立 `Sockets`，`RunServiceBody` 呼叫 `ServiceEvent.Init`、啟動廣播佇列 goroutine、再在背景跑 `runServer`，`Start` 阻塞到 owner 結束
+1. `Server.Start()` → `OwnerBase.RunLifecycle(prepareListen, runServer)`：`prepareListen` 以 `tcpconfig.ListenAddr` 解析位址；成功後建立 `Sockets`，`runServiceBody` 呼叫 `ServiceEvent.Init`、啟動廣播佇列 goroutine、再在背景跑 `runServer`，`Start` 阻塞到 owner 結束
 2. `listen()` 監聽成功或失敗後註冊就緒檢查 `tcp_listen_<name>`（`debug.RegisterReadyChecker`）：監聽失敗、尚未監聽或已 `StopAccepting` 時 `/ready` 回 503；監聽失敗時行程不退出
 3. `acceptLoop()`：
    - `Accept` 回 `net.ErrClosed` 或 owner 已關閉時結束；其他錯誤（EMFILE、ECONNABORTED 等）以 5ms 起加倍、上限 1 秒退避後重試
-   - `AcceptPolicy.Check(host, Sockets.Len())`：先檢查來源 IP 限流（`ratelimit.IPRateLimiter`），再檢查 `MaxConns`；被拒直接關閉
+   - `AcceptPolicy.Check(host, Sockets.Len())`：先檢查來源 IP 限流（`ratelimit.IPLimiter`），再檢查 `MaxConns`；被拒直接關閉
    - 並發上限 `connSem`（`MaxConns`，未設定為 10000）滿時直接拒絕，不阻塞 accept loop
 4. `handleConn`：有 `AcceptHandshake[name]` 時先做 S2S 驗證，取得已驗證的節點 ID；失敗記 Warn 後關閉
 5. `OwnerBase.ServeConn(conn, id)`：建 socket、`id != 0` 時先 `SetID`、加入 `Sockets`、`Start()`（啟動收送兩個 goroutine）、`Connect` 回呼、`Wait()` 到連線結束、`Disconnect` 回呼並從 `Sockets` 移除
@@ -263,7 +263,7 @@ svc := tcpclient.NewClient(name, baseApp, ownerEvent,
 3. msgID 為 0 → 記錄後略過
 4. 用 owner 的 factory 建訊息、`Unpack`、歸還緩衝
 5. 記錄協定事件（`tcpdiag.RecordEvent`）、`tcp_messages_received_total` +1
-6. `PushMsgEvent`：從池取 `msgEvent` 送進 eventCh；事件執行時若訊息實作 `TraceScopedMessage`，先把 traceID 注入 `Socket.Context()` 再呼叫 handler，結束後 `Put` 訊息
+6. `pushMsgEvent`：從池取 `msgEvent` 送進 eventCh；事件執行時若訊息實作 `TraceScopedMessage`，先把 traceID 注入 `Socket.Context()` 再呼叫 handler，結束後 `Put` 訊息
 
 玩家連線（`WithUntrustedPeer`）與服務間連線的差異：
 
@@ -304,20 +304,20 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 
 ## ConnectInfo 與 ServiceHello
 
-S2S 連線建立後，`msgsys.ConnectInfoOnConnect.Connect` 依序送出：
+S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出：
 
 1. `ConnectInfo`（30101）：本節點 `AppID`。對端以 `msgsys.BindConnectInfo` 綁到 socket ID；socket 已綁其他 ID 時關閉連線
 2. `ServiceHello`（30105）：`msgsys`（套件內 `sendServiceHello`）送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
 
-接收端以 `msgsys.RegisterServiceHello(svc)` 註冊處理：`verifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `msgsys.SetServiceIdentity` 設定；沒設定（單元測試）時不送、不驗證也不要求。
+接收端以 `s2shandshake.RegisterServiceHello(svc)` 註冊處理：`verifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `s2shandshake.SetServiceIdentity` 設定；沒設定（單元測試）時不送、不驗證也不要求。
 
-設定身分後 hello 為強制：`ConnectInfoOnConnect.Connect` 送出自己的 hello 後登記等待對端 hello，`msgsys.ServiceHelloTimeout`（5 秒）內沒收到就記錄 `service hello timeout, closing socket` 並關閉；`SetServiceIdentity` 同時以 `tcpruntime.SetMsgGuard` 裝上前置檢查，等待中的連線收到 `ConnectInfo`、`ServiceHello` 以外的訊息時記錄 `message before service hello, closing socket` 並關閉。所有 S2S 方向（Central-Gate、Central-World、Central 與 Chat／Lobby 的時間同步、Gate-World、Gate-Chat、World-Central、World-Gate）都經 `ConnectInfoOnConnect` 收送 hello。
+設定身分後 hello 為強制：`ConnectInfoOnConnect.Connect` 送出自己的 hello 後登記等待對端 hello，`s2shandshake.ServiceHelloTimeout`（5 秒）內沒收到就記錄 `service hello timeout, closing socket` 並關閉；`s2shandshake.RegisterServiceHello` 同時對支援 `tcpruntime.MsgGuardSetter` 的服務（`OwnerBase.SetMsgGuard`，守門掛在各服務實例上，不是行程全域）裝上前置檢查，等待中的連線收到 `ConnectInfo`、`ServiceHello` 以外的訊息時記錄 `message before service hello, closing socket` 並關閉。所有 S2S 方向（Central-Gate、Central-World、Central 與 Chat／Lobby 的時間同步、Gate-World、Gate-Chat、World-Central、World-Gate）都經 `ConnectInfoOnConnect` 收送 hello。
 
 ## s2sauth
 
 `s2s_auth.enabled` 必須明確設定（漏設視為設定錯誤）；`false` 時服務間為明文，每個行程警告一次。
 
-- 監聽端：`s2sauth.ConfigureServerFor(v, cfg, service, prefix)` 讀 `<prefix>.cert_file`、`key_file`（每 30 秒重讀憑證）、`tokens_file`（節點 ID → `sha256:<hex>`，檔案變更時 `UpdateTokens` 原子替換並關閉被撤銷的連線）、`allowed_cidrs`，安裝 `cfg.AcceptHandshake[service]`
+- 監聽端：`s2sauth.ConfigureServerFor(v, cfg, service, prefix)` 讀 `<prefix>.cert_file`、`key_file`（每 30 秒重讀憑證）、`tokens_file`（節點 ID → `sha256:<hex>`，檔案變更時 `updateTokens` 原子替換並關閉被撤銷的連線）、`allowed_cidrs`，安裝 `cfg.AcceptHandshake[service]`
 - 連出端：`s2sauth.ConfigureClientFor(v, cfg, nodeID, service, prefix)` 讀 `<prefix>.ca_file`、`token_file`、`server_name`，安裝 `cfg.DialHandshake[service]`；每次 dial 重讀檔案
 
 握手（5 秒內完成）：
