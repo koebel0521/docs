@@ -25,7 +25,7 @@
 
 預設輸出到：
 
-- `backups/mysql/mysql-YYYYMMDD-HHMMSS.sql.gz`
+- `~/pja-backups/mysql/mysql-YYYYMMDD-HHMMSS.sql.gz`（repo 外；權限 0600、目錄 0700，腳本以 `umask 077` 建立）
 
 可覆寫：
 
@@ -36,7 +36,7 @@ ENV_FILE=.env.prod BACKUP_DIR=/srv/backups/mysql ./scripts/docker-backup-mysql.s
 ## MySQL 還原
 
 ```bash
-CONFIRM_RESTORE=yes ./scripts/docker-restore-mysql.sh backups/mysql/mysql-20260324-120000.sql.gz
+CONFIRM_RESTORE=yes ./scripts/docker-restore-mysql.sh ~/pja-backups/mysql/mysql-20260324-120000.sql.gz
 ```
 
 或直接走統一入口：
@@ -59,14 +59,14 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 
 預設輸出到：
 
-- `backups/redis/redis-YYYYMMDD-HHMMSS.tar.gz`
+- `~/pja-backups/redis/redis-YYYYMMDD-HHMMSS.tar.gz`（repo 外；權限 0600）
 
 這份 tar 會包含 Redis volume 內的資料檔。
 
 ## Redis 還原
 
 ```bash
-CONFIRM_RESTORE=yes ./scripts/docker-restore-redis.sh backups/redis/redis-20260324-120000.tar.gz
+CONFIRM_RESTORE=yes ./scripts/docker-restore-redis.sh ~/pja-backups/redis/redis-20260324-120000.tar.gz
 ```
 
 或直接走統一入口：

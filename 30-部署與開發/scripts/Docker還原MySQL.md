@@ -10,7 +10,7 @@
 1. 讀 `.env.prod`。
 2. 檢查輸入備份檔存在；沒有設 `CONFIRM_RESTORE=yes` 就拒絕執行。
 3. `.gz` 備份先用 `gzip -t` 確認能完整解開，壞檔在動資料庫之前中止。
-4. 呼叫 `docker-backup-mysql.sh` 備份還原前的現況（預設輸出到 `backups/mysql-pre-restore`）。
+4. 呼叫 `docker-backup-mysql.sh` 備份還原前的現況（預設輸出到 `~/pja-backups/mysql-pre-restore`）。
 5. 解壓或直接串流到 MySQL。
 
 執行前先停掉會寫入 MySQL 的應用服務；腳本不會替你停。
