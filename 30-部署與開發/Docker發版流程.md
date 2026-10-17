@@ -206,7 +206,7 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 推 `vX.Y.Z` 標籤（請設為 Protected tag）後，`.gitlab-ci.yml` 依序執行：
 
 1. 既有檢查全部通過，`release-info` 產出 `release.json`。
-2. `build-images`：建置並推送六個映像（tag 為去掉 `v` 的版本號）。
+2. `build-images`：建置並推送六個映像（tag 為去掉 `v` 的版本號），各映像 digest 存成 artifact `images.env`。
 3. `deploy-staging`：預留。目前無第二台主機，設定 `STAGING_ENABLED=true` 與 `STAGING_ENV_FILE` 才啟用。
 4. `deploy-production`：手動按下後執行 [ci-deploy.sh](../../scripts/ci-deploy.sh)。
 
@@ -215,8 +215,8 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 1. 先拉新映像，備份 MySQL。
 2. 停止六個服務（整批替換，不跨發版混跑）。
 3. 發布 `config/data` 設定 artifact。World 啟動會比對 `current.json` 與映像內的 `release.json`，兩者必須同批更新，因此設定隨發版自動發布。
-4. 執行 DB migration，更新 `.env.prod` 的映像 tag，啟動並等待六個服務 healthy。
-5. 任一步失敗：映像與設定 artifact 退回上一版，資料庫不還原。
+4. 執行 DB migration，把 `.env.prod` 的映像更新為 `images.env` 的 digest（沒有該檔時用 tag），啟動並等待六個服務 healthy。
+5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。
 
 自動發布只處理一般設定變更。拓樸或變數 migration（需 `-topology-migration`、`-variable-migration` 與離線搬遷）仍須依 [配置Artifact發布與回退](配置Artifact發布與回退.md) 手動處理，自動發布遇到會失敗並回退。
 
