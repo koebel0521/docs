@@ -51,7 +51,25 @@
 | 4 核（`e2-standard-4`） | 全部成功；CPU 合計約 2.7 核（約 68%）、記憶體約 2.6GiB；穩態擲骰 p99 8～10ms，進場尖峰最壞 28ms |
 | 8 核（`e2-standard-8`） | 全部成功；CPU 合計約 2.8 核（約 35%）；擲骰 p99 全程 < 5ms |
 
-結論：**最小可行是伺服端 `e2-standard-4`**（4 vCPU／16GB，全部同機），餘裕只有約 30%；要留餘裕或要往上找極限用 `e2-standard-8`。本機 CPU 比 GCE 快，上雲後要打折看。本機模擬只有 12 核與約 15GB 記憶體，方案 2（16 vCPU）放不下。
+結論（本機）：4 核可撐 5000 人，但本機 CPU 與 GCE E2 差一截，**不能直接當成雲端的最小規格**。
+
+### 本機與 E2 的速度差距
+
+本機是 AMD Ryzen 5 9600X（Zen 5，6 核 12 執行緒）。GCE 的 1 個 vCPU 是 1 個超執行緒，E2 跑在較舊世代（Skylake、Broadwell、Haswell、EPYC Rome 等，由 Google 動態分配）並可能在持續負載下變動（見 [CPU 平台](https://docs.cloud.google.com/compute/docs/cpu-platforms)）。沒有官方對照數據；依世代與時脈**估計本機單執行緒快約 2～3 倍**，這是推論，不是實測。
+
+換算後：本機 4 核約 68% 的負載，在 E2 可能超過 100%（不夠）；8 核約 35% 的負載，E2 約 70～100%（可撐但沒有餘裕）。**所以雲端建議從 `e2-standard-8` 起跳，或選單核更快的機型（例如 C3、N2），並先校準。**
+
+### 校準
+
+`tools/private/calibrate` 在四種負載（bcrypt、sha256、map 配置 churn、channel 往返）各量單執行緒與並行速度，並輸出 `score`（並行的幾何平均）。在本機與目標 VM 各跑一次，相除就是換算係數：
+
+```bash
+go run ./tools/private/calibrate -p 4      # 並行度設成 VM 的 vCPU 數
+```
+
+本機（`-p 4`）基準：bcrypt 106 次／秒、sha256 約 848 萬次／秒、map churn 約 5740 萬次／秒、channel 往返約 1430 萬次／秒，**score = 927063**。VM 的 score 若是本機的 1／2.5，就把本機的 CPU 用量乘 2.5 當預估。
+
+登入吞吐的提醒：本機單執行緒 bcrypt 約 27 次／秒，Central 有 2～4 個並行位，理論上限遠高於觀察到的約 6 個帳號／秒，所以進場時間主要受壓測工具的 `-pace`（序列登入）而非 bcrypt 限制；E2 慢 2～3 倍也不會讓它變成瓶頸。
 
 ## 步驟
 
@@ -75,7 +93,7 @@ N=500 HOLD=10m PASSWORD='<自訂密碼>' ./run-test.sh
 ## 怎麼判讀
 
 - 看 Grafana（應用 VM 的 `127.0.0.1:3000`，用 `gcloud compute ssh --tunnel-through-iap -- -L 3000:127.0.0.1:3000` 轉出）與 Prometheus 告警，不依賴客戶端的取樣欄位：方案 0、1 沿用 `compose.full.yml`，診斷埠只綁 loopback，客戶端取不到（`soakload` 的伺服端欄位會是 0）；方案 2 的應用 VM 把診斷埠開在內網，客戶端取樣可用。
-- 登入階段：新帳號要 bcrypt，吞吐受 `max(2, CPU 數 ÷ 2)` 個並行位限制；5000 位新帳號進場要幾分鐘到十幾分鐘，`run-test.sh` 用 `-pace 100ms` 配合單來源位址登入速率。
+- 登入階段：新帳號要 bcrypt（Central 並行位為 `max(2, CPU 數 ÷ 2)`），但實測進場時間主要受工具的 `-pace 100ms` 序列登入限制，5000 位新帳號約 14 分鐘；`run-test.sh` 的 `-pace` 同時用來配合單來源位址登入速率（30 次／10 秒）。
 - 通過標準（本機基準，GCP 上應相同或更好）：5000 連線全部在線；擲骰 p99 在個位數 ms～十幾 ms；Gate 堆積的 goroutine 約 3／連線；無 `GameQueueOverflow`、`GameLoginCentralBusy` 長時間 firing。
 - 要找上限：把 `EVERY` 從 `3s` 降到 `1s`、`300ms`，看哪個元件先飽和（Gate CPU、World、MySQL、Redis）。
 
