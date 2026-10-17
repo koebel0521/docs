@@ -81,6 +81,9 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
 - 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/`、`lobby-4001/` 分別唯讀掛載到各服務的 `/run/secrets`（Chat、Lobby 也以 S2S 連 Central 60003／60004 接收遊戲時間）；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
 - debug 端點（`/metrics`、`/ready` 等）的來源白名單由 `DEBUG_ALLOW_CIDRS` 決定，compose 會自動在後面接上 `PROD_NETWORK_SUBNET`（預設 `172.30.0.0/24`），讓 Prometheus 容器抓得到 `/metrics`。改了 `PROD_NETWORK_SUBNET` 不必另改白名單；若在設定檔或其他地方手寫 `allowed_cidrs`，須與 `PROD_NETWORK_SUBNET` 同步，否則抓取失敗觸發 `GameServiceDown`。
+- pprof（`/debug/pprof/*`）與 Gate `POST /diag/reconcile` 以 `.env.prod` 的 `DEBUG_PPROF_BASIC_AUTH=user:pass` 加 basic auth，compose 傳給六個服務；未設定時只靠來源 CIDR，啟動記一筆 Warn。
+- 日誌層級由 `.env.prod` 的 `LOG_LEVEL`（`trace`／`debug`／`info`／`warn`／`error`，預設 `info`）控制，不合法的值讓服務拒絕啟動；設定檔路徑由 compose 的 `APP_CONFIG` 指定，命令列 `-config` 優先於它。
+- 設定以目錄掛載 `docker/prod/config:/config:ro`（每個容器看得到全部服務的設定檔）；單檔 bind mount 在宿主機以改名方式更新設定時會停在舊 inode，熱重載收不到。
 - 正式環境不傳 `FAULT_INJECT`；`go run ./tools/pja configaudit` 會檢查。
 - 告警通知：`monitoring` profile 含 Alertmanager，告警送往 `ALERTMANAGER_SECRET_DIR`（預設 `./alertmanager-secrets`，相對於 compose 檔目錄）下 `webhook_url` 檔案內的 URL（單行，例如團隊聊天室或值班系統的接收端）。目錄或檔案不存在時告警只會留在 Alertmanager 介面（`127.0.0.1:9093`），不會通知任何人；該目錄已列入 `.gitignore`。
 - Prometheus 時序資料放在具名資料卷 `prod-prometheus-data`，重建容器不會清空；保留期由 `PROMETHEUS_RETENTION` 控制（預設 `15d`）。
@@ -136,6 +139,15 @@ ALTER TABLE `user` MODIFY `account` varchar(100) COLLATE utf8mb4_bin NOT NULL;
 -- 先以 SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_NAME = 'player_board_road_star' AND CONSTRAINT_TYPE = 'FOREIGN KEY' 確認名稱，不存在就略過。
 ALTER TABLE player_board_road_star DROP FOREIGN KEY fk_player_board_road_star_board;
 ALTER TABLE player_board_building DROP FOREIGN KEY fk_player_board_building_board;
+
+-- World：Record outbox 領取改依到期時間（next_attempt_at）走索引，取代舊的 idx_record_outbox_pending
+CREATE INDEX idx_record_outbox_due ON record_outbox_event (sent_at, dead_lettered_at, next_attempt_at, created_at);
+DROP INDEX idx_record_outbox_pending ON record_outbox_event;
+
+-- World：任務補償依玩家查最近 7 天事件；player_id 單欄索引改為 (player_id, created_at)
+-- 舊單欄索引名稱為 gorm 預設的 idx_record_outbox_event_player_id，先以 SHOW INDEX FROM record_outbox_event 確認
+CREATE INDEX idx_outbox_player ON record_outbox_event (player_id, created_at);
+DROP INDEX idx_record_outbox_event_player_id ON record_outbox_event;
 ```
 
 大表建索引會鎖表時間較長，請在離峰執行；`combat_session` 目前沒有刪除流程，保留期限待決定。
