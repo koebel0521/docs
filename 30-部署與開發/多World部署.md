@@ -14,7 +14,7 @@ created: 2026-10-16
 3. **帳號的 World 是固定的**（`user.world_id`）。World 掛掉時，綁在它上面的玩家無法改派到別的 World（記憶體狀態與寫回都在原 World）；其他 World 的玩家不受影響。
 4. **每個 World 一個獨立的 `game_store.spill_dir`**（關機時寫不進 MySQL 的玩家異動落地目錄），不要共用。
 5. 所有 World 共用同一個 MySQL、Redis 與 RabbitMQ。
-6. 診斷埠（`pkg/debug/services.go`：World 為 6062）寫死，同一台主機跑第二個 World 會記錄 `debug server listen :6062` 錯誤但不影響服務；正式環境每個 World 各自一台主機或容器。
+6. 診斷埠預設依服務類型固定（`pkg/debug/services.go`：World 為 6062）；同一台主機跑第二個 World 時在其設定檔加 `debug.addr`（例如 `":6072"`），否則後啟動的會記錄 `debug server disabled; set debug.addr ...` 錯誤、沒有 `/metrics`、`/ready` 與 pprof（服務照常運作）。
 
 ## 設定範例
 
