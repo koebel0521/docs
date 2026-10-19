@@ -615,7 +615,7 @@ Variable reload 至少需要：
 
 ### Phase 2：安全 artifact 發布
 
-狀態：已實作。使用 `go run ./tools/configartifact -source config/data -root config/data` 發布；工具會先驗證完整 tables，再建立 `releases/<config-sha>/`、寫入 `checksums.json`，最後才原子更新 `current.json`。`schema_hash` 由編譯進 binary 的 `generated/GameConfigs.go` 內容計算，生成 code 改變時舊 artifact 會被拒絕。
+狀態：已實作。使用 `go run ./tools/pja configartifact -source config/data -root config/data` 發布；工具會先驗證完整 tables，再建立 `releases/<config-sha>/`、寫入 `checksums.json`，最後才原子更新 `current.json`。`schema_hash` 由編譯進 binary 的 `generated/GameConfigs.go` 內容計算，生成 code 改變時舊 artifact 會被拒絕。
 
 World 預設要求 `current.json`，避免執行期直接讀取正在同步的 raw bytes。只有配置明確設定 `data_config.allow_legacy_directory: true` 時才保留 legacy 目錄讀取，僅供本機開發與 Docker 範例使用。
 
@@ -668,7 +668,7 @@ config/data/releases/<new-config-sha>/
 
 artifact 發布前要驗證：被移除的舊 `SpaceID` 都有 mapping、mapping 目標存在於新 topology、且不允許目標指向另一個已移除 ID。缺少 mapping 時拒絕發布，不能靜默將玩家送回起點。
 
-Topology migration 不是熱重載。先停止所有 World，再以 `go run ./tools/configartifact -topology-migration`（或 `publish-data-config.ps1 -TopologyMigration`）發布；啟動前以 `go run ./tools/configartifact -verify-topology-lineage`（或 `publish-data-config.ps1 -VerifyTopologyLineage`）確認 artifact 歷史與 migration steps 完整，最後才啟動 World。發布模式只額外允許 `Board/BoardTopology.bytes` 變更，且必須包含 `migrations/topology.json`，其他不安全變更仍會被拒絕。
+Topology migration 不是熱重載。先停止所有 World，再以 `go run ./tools/pja configartifact -topology-migration`（或 `publish-data-config.ps1 -TopologyMigration`）發布；啟動前以 `go run ./tools/pja configartifact -verify-topology-lineage`（或 `publish-data-config.ps1 -VerifyTopologyLineage`）確認 artifact 歷史與 migration steps 完整，最後才啟動 World。發布模式只額外允許 `Board/BoardTopology.bytes` 變更，且必須包含 `migrations/topology.json`，其他不安全變更仍會被拒絕。
 
 後續 topology migration（已存在 topology artifact chain）改用可搬遷性 gate：
 

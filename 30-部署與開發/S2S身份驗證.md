@@ -24,7 +24,7 @@
 3. socket ID 由驗證結果設定；ConnectInfo 不得改成其他身份。登入、同步、恢復驗證及 World 轉送的來源身份也必須符合連線。
 4. 斷線等待正在執行的訊息、移除 socket 並完成斷線清理後，才釋放節點 ID；舊連線的排隊訊息會丟棄。驗證客戶端同樣阻擋舊連線訊息。
 5. 每份清單禁止不同節點共用 token；日誌不顯示 token。
-6. 接收端每秒檢查授權檔內容摘要，兼容 Docker／跨系統目錄掛載；不合法更新保留舊設定。撤銷或 token 改變時，關閉受影響節點的連線，其他節點不受影響。`{}` 撤銷該清單全部節點，`null` 不合法。
+6. 接收端每秒檢查授權檔內容摘要，兼容 Docker／跨系統目錄掛載；不合法更新保留舊設定（被拒內容只警告一次；摘要在套用成功後才記錄，暫時性失敗後同一份檔案會重試，不會靜默停在舊值；讀檔失敗與被拒的警告都帶 `err`）。撤銷或 token 改變時，關閉受影響節點的連線，其他節點不受影響。`{}` 撤銷該清單全部節點，`null` 不合法。
 
 同一 Gate 可同時連到 Central、World、Chat。單連線限制作用於各接收端程序；多程序叢集的全域排他需共享租約。網路斷線尚未偵測時，持有有效 token 的新連線會直接取代舊連線；服務間讀取逾時為三個心跳週期（3 分鐘），沒有重連的半開連線也會在此期間清理。token 外洩時，攻擊者可以搶佔節點的連線，需立即輪替 token。
 
@@ -116,7 +116,7 @@ Central 的 `s2s_auth.chat`、`s2s_auth.lobby` 監聽區段與 `world` 相同格
 
 清單是 JSON 物件，例如 `{"2001":"sha256:<64位十六進位摘要>"}`；其中角括號部分須換成真實摘要。不得填入原始 token。原始 token 長度限制為 43 至 256 位元組，須用安全亂數產生器。憑證 DNS SAN 必須包含客戶端的 `server_name`；TCP 使用內部 IP 也能以名稱驗證，不能關閉驗證。各鍵可用大寫環境變數覆寫，例如 `S2S_AUTH_WORLD_SERVER_NAME`。
 
-各監聽區段可設定 `allowed_cidrs`，例如 `["10.1.2.3/32", "fd00::1/128"]`。空清單不限制來源。依真實 TCP 來源 IP 在 TLS 前檢查，不信任轉發標頭；修改需重啟對應接收端。Docker、NAT 應填接收端實際看到的來源。IP 限制不能取代 token 驗證。
+各監聽區段可設定 `allowed_cidrs`，例如 `["10.1.2.3/32", "fd00::1/128"]`。空清單不限制來源；正式範本（`docker/prod/config/central.yaml`、`chat.yaml`、`world.yaml`）已限制為 compose 網段 `172.30.0.0/24`（須與 `PROD_NETWORK_SUBNET` 一致）。依真實 TCP 來源 IP 在 TLS 前檢查，不信任轉發標頭；修改需重啟對應接收端。Docker、NAT 應填接收端實際看到的來源。IP 限制不能取代 token 驗證。
 
 ## Docker 開發
 
@@ -132,7 +132,7 @@ docker compose -f docker/compose/compose.full.yml -f docker/compose/compose.s2s-
 docker compose -f docker/compose/compose.full.yml -f docker/compose/compose.s2s-auth.yml up -d --build
 ```
 
-掛載的 Gate、World ID 必須符合該服務設定中的 `id`；環境變數 `S2S_GATE_ID`、`S2S_WORLD_ID` 只選擇機密目錄，不會改應用程式 ID。多台節點需各自的容器與 ID／網路設定。
+掛載的 Gate、World ID 必須符合該服務設定中的 `id`；環境變數 `S2S_GATE_ID`、`S2S_WORLD_ID`（Lobby 為 `S2S_LOBBY_ID`，預設 4001）只選擇機密目錄，不會改應用程式 ID。`compose.s2s-auth.yml` 也替各服務設定 `S2S_AUTH_ENABLED`、`S2S_AUTH_CERT_FILE`／`S2S_AUTH_KEY_FILE`／`S2S_AUTH_TOKENS_FILE`（Central）與 `S2S_AUTH_CA_FILE`／`S2S_AUTH_TOKEN_FILE`（Gate），Gate 驗證 Central 的憑證名稱取自 `S2S_CENTRAL_SERVER_NAME`（預設 `central.internal`）。多台節點需各自的容器與 ID／網路設定。
 
 ```text
 secrets/s2s/

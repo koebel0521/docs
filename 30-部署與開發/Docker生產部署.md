@@ -57,6 +57,10 @@ graph LR
 - `LOBBY_IMAGE`
 - `RECORD_IMAGE`
 - `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`）
+- `LOTTERY_SECRET`：World 抽獎種子機密，覆寫 `docker/prod/config/world.yaml` 的 `lottery.secret`；未設定時 compose 直接報錯
+- `GRAFANA_ADMIN_USER`（預設 `admin`）
+- `PROMETHEUS_IMAGE`／`ALERTMANAGER_IMAGE`／`GRAFANA_IMAGE`／`REDIS_IMAGE`／`RABBITMQ_IMAGE`／`MYSQL_IMAGE`：第三方映像，範本已釘 digest，升級時一併更新
+- `MIGRATION_PLAN_DIR`（留空用映像內 `/src/migrations`；自訂須為宿主機絕對路徑）／`MIGRATION_ENVIRONMENT`（`production`）／`MIGRATION_TIMEOUT`（`5m`）／`MIGRATION_LOCK_TIMEOUT`（`30s`）：一次性 migration job 使用，服務啟動不跑 migration
 - `LOBBY_ADMIN_TOKEN`／`LOBBY_OPS_TOKEN`／`LOBBY_GM_TOKEN`（需要 Lobby admin 端點時；每個至少 32 字元，例如 `openssl rand -hex 32`，過短或 `change-me` 開頭會拒絕啟動）
 - `DATA_CONFIG_ROOT`：宿主機上的遊戲設定 artifact root（`current.json` 與 `releases/`），以唯讀方式掛到 World 的 `/app/config/data`
 
@@ -112,6 +116,8 @@ AUTO_MIGRATE_DISABLED=true
 - `Central` → `user_record` 表
 - `Chat` → `chat_message` 表
 - `World` → `player_item` 表
+
+關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。
 
 Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，它只會建立自己的事件分表。
 

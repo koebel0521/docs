@@ -26,3 +26,11 @@ Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，�
 批次消費（`RunBatch`）全部成功時，批尾只送一次 `Ack(tag, multiple=true)`（單一 goroutine 依序處理同一 channel 的投遞，本批之前的投遞都已 ack／nack，所以只確認本批），省下逐筆 ack 的 frame 寫出與 flush；整批失敗退回逐筆處理時維持 `multiple=false`，避免連帶確認其他投遞。
 
 Record handler 回傳暫時性錯誤時，消費端 NACK 並放回佇列，第 n 次失敗後暫停 1 秒 × 2^(n-1)（上限 30 秒）再取下一筆；同一事件失敗 20 次或回傳永久性錯誤（例如 `occurred_at` 超出可寫入範圍，或缺少 `OccurredAt`：Record 只採生產者填的事件時間，不以接收時間補）時 NACK 不重排，交給死信佇列。handler panic 會被接住並記 `recordmq: handler panic`：整批 panic 視為整批失敗、退回逐筆，逐筆 panic 視為永久性錯誤直接進死信。暫停期間整個消費者停止取件：暫時性錯誤多半是下游 MySQL 故障，整體放慢才不會空轉。
+
+失敗計數表記失敗次數與最後失敗時間，`depthTicker` 觸發時清掉超過 10 分鐘未再失敗的鍵（重排後被其他消費者取走或過期的事件不會永久殘留）。`Consumer.Close` 以 `errors.Join` 同時回報 channel 與連線的關閉錯誤。`recordmq_connection_status` 在消費端連線成功設為 1、`Close` 設為 0，`GameRecordMQDisconnected` 只看 `job="record"`。
+
+## 關機與重連
+
+- `AsyncPublisher.Stop(ctx)` 受關機期限約束：期限到即取消排空與等待中的確認（broker 失聯時不會無限久）；World record sink 傳入關機 ctx。
+- 同步發布端 `Close` 先以 `CloseDeadline` 有期限地關閉連線，讓卡在 `connection.blocked` 背壓的寫入失敗返回，再等進行中的發布結束；World record sink 的 `publisher.Close` 另以 `appcore.WaitContext` 受關機任務期限約束，broker TCP 卡住時 Cleanup 不會永遠卡住。World 啟動失敗路徑也會帶期限關閉已建立的 record sink。
+- `NotifyClose` 在建立連線的 `dialAndSetup` 內登記（回傳 `amqpLink`）：連線交出後才登記時，中間若已斷線 amqp091 會直接關閉通知 channel，重連迴圈誤判為正常關閉而停止重連，之後 `Publish` 一律 `ErrClosed`。

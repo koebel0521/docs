@@ -15,7 +15,7 @@
 | `pkg/tcpregistry` | `Registry`：登記各服務 owner、依名稱查找、`Drain` 滾動部署 |
 | `pkg/servicefinder` | `Finder` 介面（`Gate()`、`Central()`、`World()`、`User()`、`Chat()`、`Lobby()`），由 `tcpregistry.Registry` 實作 |
 | `pkg/s2sauth` | 服務間 TLS 1.3 + 節點 token 驗證、來源 CIDR 限制 |
-| `pkg/msg`、`pkg/msg/<群組>` | 執行期訊息型別（物件池、`PackTo`／`Unpack`）；`pkg/msg/system` 慣例匯入為 `msgsys` |
+| `pkg/msg`、`pkg/msg/<群組>` | 執行期訊息型別（物件池、`PackTo`／`Unpack`） |
 | `pkg/msgpool` | `MsgBase[T]`、`Pool[T]` |
 | `pkg/protocol`、`pkg/protocol/wire` | 由 PJA-Protocol 產生的訊息 ID、描述表與 Luban 結構，不得手改 |
 | `pkg/tcpdiag` | 協定收送紀錄（`/diag/protocol` 的資料來源） |
@@ -92,7 +92,7 @@ type Msg interface {
 - `SendMsg` 之後訊息歸 socket，送完由 sendLoop `Put`；呼叫端不可再使用
 - 收到的訊息由 handler 事件執行完後 `Put`；handler 要跨 goroutine 保留資料須先複製
 - `msg.OwnedRaw`（`TakeOwnedRaw`）只送單一 socket，交換緩衝不複製，送出後歸還池；原本可多 socket 共用的 `msg.Raw` 已無呼叫端，已移除
-- `msgsys.SharedHeartbeatReq` 是不回收的單例（pool 為 nil），心跳廣播重複送它
+- `system.SharedHeartbeatReq` 是不回收的單例（pool 為 nil），心跳廣播重複送它
 
 ### PackTo 快速路徑
 
@@ -166,7 +166,7 @@ type ServiceEvent interface {
 ### 註冊 handler
 
 ```go
-tcpruntime.AddMsgHandler(svc, msgsys.NewHelloRequest, r.onHelloRequest)
+tcpruntime.AddMsgHandler(svc, system.NewHelloRequest, r.onHelloRequest)
 ```
 
 `AddMsgHandler[T]` 包裝型別斷言後呼叫 `OwnerBase.AddNewMsg`。同一 ID 重複註冊只保留第一個並記錄錯誤。owner 為已驗證（S2S 握手）服務時，handler 在註冊時包上 `guardAuthenticated`：連線 context 已取消或該 socket 已不在 owner 的連線集合中（例如被同節點新連線取代）時，訊息直接略過。
@@ -260,7 +260,7 @@ svc := tcpclient.New(name, baseApp, ownerEvent,
 
 1. 節流設定 read deadline 後 `DecodePooled`
 2. 讀取限流超過 → 關閉
-3. msgID 為 0 → 記錄後略過
+3. msgID 為 0 → 玩家連線記 Warn 後關閉連線（無合法用途，避免每則灌一行日誌且繞過未 Hello 檢查）；S2S 連線記 Error 後略過、連線保留
 4. 用 owner 的 factory 建訊息、`Unpack`、歸還緩衝
 5. 記錄協定事件（`tcpdiag.RecordEvent`）、`tcp_messages_received_total` +1
 6. `pushMsgEvent`：從池取 `msgEvent` 送進 eventCh；事件執行時若訊息實作 `TraceScopedMessage`，先把 traceID 注入 `Socket.Context()` 再呼叫 handler，結束後 `Put` 訊息
@@ -344,7 +344,7 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 | `tcp_messages_sent_total`、`tcp_messages_received_total` | 收送訊息數 |
 | `tcp_send_queue_depth`、`tcp_send_queue_overflow_total` | socket 送出佇列深度（scrape 時加總各 socket 的 `len(sendCh)`，不再逐則 Inc/Dec）與溢位關閉次數 |
 | `tcp_unknown_messages_total` | 未註冊訊息 |
-| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄 |
+| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄；World 盤面指令另有 `board_queue_full`（工作者佇列滿）與 `unknown_player`（玩家不在本 World 或所屬 Gate 不符，同時有取樣 Warn）、`board_decode`（盤面／任務指令 payload 解碼失敗，以 `board.ErrDecode` 區分，記取樣 Warn 而非 Error） |
 | `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
 | `game_event_queue_overflow_total` | eventCh 滿 |
 | `game_msg_queue_dropped_total` | owner 廣播佇列滿 |
@@ -359,7 +359,7 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 
 - 啟用：旗標 `-protocol-record` > 環境變數 `DEBUG_PROTOCOL_RECORD` > 設定 `protocol_record_enabled`
 - payload：`protocol_record_payload_enabled` 允許時，再由 `DEBUG_PROTOCOL_RECORD` 決定
-- 容量與保留：`protocol_record_limit`、`protocol_record_ttl`；落檔目錄 `protocol_record_file_dir`
+- 容量與保留：`protocol_record_limit`、`protocol_record_ttl`；落檔目錄 `protocol_record_file_dir`（目錄權限 0700、檔案 0600，內含 socket key 與訊息內容；開檔／寫入失敗只在由成功轉失敗時記一筆日誌，避免磁碟滿時洗版）
 
 ### 日誌
 

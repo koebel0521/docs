@@ -23,7 +23,7 @@
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
 | `gm:ban:{account}` | String | Lobby (admin) | 封禁期間（`duration` 參數，預設 30 天 `defaultBanTTL`） | 帳號封禁標記（key 存在 = 被封禁） |
-| `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除 | GM 踢人佇列，Gate 用 BLPOP 消費 |
+| `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除 | GM 踢人佇列，Gate 用 BLPOP 消費；playerID 解析失敗記 Warn 並計 `game_async_failure_total{queue="kick",outcome="invalid_payload"}` |
 | `gm:version:policy` | String（JSON） | Lobby (admin) → Gate | 永久 | Client 版本政策：維護旗標、線上玩家寬限期與各平台最低／最新遊戲版本；Gate 每 10 秒重新載入，讀取失敗沿用舊值 |
 | `gm:grant_item:{worldID}` | List | Lobby (admin) → World | 消費後移除 | GM 發道具佇列，World 用 BRPopLPUSH 消費 |
 | `gm:grant_item:processing:{worldID}` | List | World | 消費期間 | 處理中指令（BRPOPLPUSH 從佇列移入，處理完移除，避免重複消費） |

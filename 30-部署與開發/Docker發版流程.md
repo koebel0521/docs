@@ -36,13 +36,14 @@
 - deploy 時使用的 `.env.prod` 版本紀錄
 - `pkg/release/release.json`（發版名稱、server commit、協定版號與 schema 指紋、設定版本與序號、設定契約、database schema；建置時嵌入每個服務，格式見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md)）
 - migration plan checksum 與 schema migration 狀態
+- 服務 `-version`：第一行只印版本，其後以 `key=value` 印 `release`、`server_commit`、`protocol_version`、`config_version`、`go_version`，可用來核對容器內嵌的發版資訊
 
 ## 3. 建議 release 步驟
 
 ### 手動步驟
 
 1. 決定版本號；`go run ./tools/pja releasemanifest generate -release <tag> -commit <SHA>` 依實際產物寫出 `release.json`
-2. `go run ./tools/pja releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）
+2. `go run ./tools/pja releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）；`config/data/version.json` 以 `dataconfig.LoadManifest` 載入並驗證（40 字元 SHA、`luban_version`、`config_version` 等必填），`{}` 或缺欄位直接報錯，不再因空檔略過比對；`release.json` 以原子寫入，中斷不留截斷檔
 3. build image
 4. push image
 5. 完成 MySQL backup / snapshot
@@ -209,6 +210,7 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 2. `build-images`：建置並推送六個映像（tag 為去掉 `v` 的版本號），各映像 digest 存成 artifact `images.env`。
 3. `deploy-staging`：預留。目前無第二台主機，設定 `STAGING_ENABLED=true` 與 `STAGING_ENV_FILE` 才啟用。
 4. `deploy-production`：手動按下後執行 [ci-deploy.sh](../../scripts/ci-deploy.sh)。
+   `build-images` 與 `deploy-production` 的 `after_script` 結束後都會 `docker logout`，registry 憑證不留在 runner 使用者的 `~/.docker/config.json`。
 
 `ci-deploy.sh` 預期關服維護，流程固定：
 
