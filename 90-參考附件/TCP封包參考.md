@@ -149,7 +149,7 @@ type Socket interface {
 
 - `Key()`：建立時由 `netx.NewSocketKey()` 產生的連線唯一鍵；`ID()`：綁定的玩家 ID 或節點 ID（`Sockets.ByID` 依此索引）
 - `Context()`：handler 執行期間帶該訊息 traceID 的 context；連線結束時取消
-- `PushEvent(fn)`：把任意工作送進事件迴圈，回傳 false 代表沒送入、fn 不會執行
+- `PushEvent(fn)`：把任意工作送進事件迴圈，回傳 false 代表沒送入、fn 不會執行；現在經 host 投遞，與 `AppBase.PostEvent` 同保證：事件迴圈結束後一律回 false
 
 ### ServiceEvent
 
@@ -198,7 +198,8 @@ go svc.Start()
 | `WithReadDeadTime`／`WithWriteDeadTime` | 只接受正值；未設定預設 30 秒 |
 | `withServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
 | `WithTCPConfig(cfg)` | 只設定位址解析與握手 |
-| `WithSocketOptions(...)` | socket 層選項 |
+| `WithSocketOptions(...)` | socket 層選項（型別為 `tcpsocket.Option`） |
+| `WithReadyRegister(fn)` | 就緒檢查的註冊函式；正式環境傳 `debug.Server` 的 `RegisterReadyChecker`（由 `startup.InitializeObservability` 回傳的 `*debug.Server` 經組合根傳遞），不設定時不註冊。全域的 `debug.Default`、`debug.RegisterReadyChecker`、`debug.CheckReady` 已刪除 |
 | `WithMaxFrameSize(n)` | 收包 frame 上限 |
 
 socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即關閉）、`WithUntrustedPeer`（玩家連線，見事件派發）、`WithSendQueueDepth`（送出佇列深度，Start 前套用）、`withEventCh`（`NewOwnerBase` 自動附加）。
@@ -224,7 +225,7 @@ svc := tcpclient.New(name, baseApp, ownerEvent,
 ### Server 端
 
 1. `Server.Start()` → `OwnerBase.RunLifecycle(prepareListen, runServer)`：`prepareListen` 以 `tcpconfig.ListenAddr` 解析位址；成功後建立 `Sockets`，`runServiceBody` 呼叫 `ServiceEvent.Init`、啟動廣播佇列 goroutine、再在背景跑 `runServer`，`Start` 阻塞到 owner 結束
-2. `listen()` 監聽成功或失敗後註冊就緒檢查 `tcp_listen_<name>`（`debug.RegisterReadyChecker`）：監聽失敗、尚未監聽或已 `StopAccepting` 時 `/ready` 回 503；監聽失敗時行程不退出
+2. `listen()` 監聽成功或失敗後註冊就緒檢查 `tcp_listen_<name>`（經 `WithReadyRegister` 傳入的 `RegisterReadyChecker`）：監聽失敗、尚未監聽或已 `StopAccepting` 時 `/ready` 回 503；監聽失敗時行程不退出
 3. `acceptLoop()`：
    - `Accept` 回 `net.ErrClosed` 或 owner 已關閉時結束；其他錯誤（EMFILE、ECONNABORTED 等）以 5ms 起加倍、上限 1 秒退避後重試
    - `AcceptPolicy.Check(host, Sockets.Len())`：先檢查來源 IP 限流（`ratelimit.IPLimiter`），再檢查 `MaxConns`；被拒直接關閉

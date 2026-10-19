@@ -29,6 +29,15 @@ Record handler 回傳暫時性錯誤時，消費端 NACK 並放回佇列，第 n
 
 失敗計數表記失敗次數與最後失敗時間，`depthTicker` 觸發時清掉超過 10 分鐘未再失敗的鍵（重排後被其他消費者取走或過期的事件不會永久殘留）。`Consumer.Close` 以 `errors.Join` 同時回報 channel 與連線的關閉錯誤。`recordmq_connection_status` 在消費端連線成功設為 1、`Close` 設為 0，`GameRecordMQDisconnected` 只看 `job="record"`。
 
+## 啟動連不上 RabbitMQ
+
+World 設定了 RabbitMQ 但啟動時連不上，**不拒絕啟動，也不永久停用 record sink**：Record 是旁路，不該因 broker 暫時中斷讓 World 起不來，但降級後永不恢復也不對（compose 自動重啟時 broker 可能還沒好）。因此改在背景以指數退避（1 秒倍增到 30 秒）持續重試，連上後才把 sink 交給 App。
+
+- 日誌：啟動失敗 Error `world record sink unavailable at startup, retrying in background; Record events are dropped until it connects`，每次重試失敗 Warn `world record sink retry failed`（`next`、`err`），連上 Info `world record sink connected after startup retry`。
+- 連上前一般事件（`App.PublishRecord`）因 sink 為 nil 略過；必須送達的 outbox 事件留在 MySQL。有設定 RabbitMQ 時 outbox relay **一律啟動**，sink 尚未連上時整輪略過（不燒重試次數），連上後照常發送；沒設定 RabbitMQ 才不啟動 relay。
+- `recordmq_connection_status=0` 因此是暫態，`GameRecordMQDisconnected` 的 5 分鐘門檻會在持續連不上時才響；不必重啟 World。
+- 關機流程會停止重試並排空已連上的 sink，連上與關閉同時發生時直接排空關閉，不會洩漏連線。
+
 ## 關機與重連
 
 - `AsyncPublisher.Stop(ctx)` 受關機期限約束：期限到即取消排空與等待中的確認（broker 失聯時不會無限久）；World record sink 傳入關機 ctx。
