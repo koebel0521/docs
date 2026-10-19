@@ -15,6 +15,7 @@ created: 2026-10-16
 4. **每個 World 一個獨立的 `game_store.spill_dir`**（關機時寫不進 MySQL 的玩家異動落地目錄），不要共用。
 5. 所有 World 共用同一個 MySQL、Redis 與 RabbitMQ。
 6. 診斷埠預設依服務類型固定（`pkg/debug/services.go`：World 為 6062）；同一台主機跑第二個 World 時在其設定檔加 `debug.addr`（例如 `":6072"`），否則後啟動的會記錄 `debug server disabled; set debug.addr ...` 錯誤、沒有 `/metrics`、`/ready` 與 pprof（服務照常運作）。
+7. **每個 World 都要加進 Prometheus 抓取目標**：`world` job 只有靜態的 `world:6062`，其餘 World 經 file_sd 讀 `docker/monitoring/targets/world-*.json`（不進版控；`compose.full`／`compose.prod` 把該目錄掛到 `/etc/prometheus/targets`，改檔免重啟 Prometheus）。漏加的 World 沒有指標與告警，自動擴縮也會依偏低的在線數決策。檔案格式為 file_sd 的 JSON，例如 `[{"targets":["world-2:6062"]}]`；`world-autoscale.json` 由擴縮腳本自動維護，手動加的 World 請另開一個 `world-<名稱>.json`。
 
 ## 設定範例
 
@@ -53,7 +54,7 @@ game_store:
 
 ## 維運操作
 
-- **新增 World**：先啟動新 World（連上 Central），再把它加進每個 Gate 的 `dial.world` 並重啟 Gate。Gate 重啟會中斷其上全部玩家（優雅關機 drain 30 秒），要滾動重啟、一次一個 Gate。新 World 在 Central 重連冷卻（30 秒）結束後開始被指派新帳號。
+- **新增 World**：先啟動新 World（連上 Central），在 `docker/monitoring/targets/` 加它的抓取目標，再把它加進每個 Gate 的 `dial.world` 並重啟 Gate。Gate 重啟會中斷其上全部玩家（優雅關機 drain 30 秒），要滾動重啟、一次一個 Gate。新 World 在 Central 重連冷卻（30 秒）結束後開始被指派新帳號。
 - **計畫性維護 World**：`POST /admin/world/drain`（Lobby admin API）讓新玩家避開該 World，既有玩家不受影響；維護完成用 `/admin/world/undrain`。`GET /admin/world/draining` 看目前排空集合。
 - **World 重啟**：不需要重啟 Gate。Gate 的重連退避最長 30 秒，加上 Central 冷卻 30 秒，綁在該 World 上的玩家約 45～60 秒內可重新登入。
 - **canary**：Central 的 `TrafficSliceWorldID` 依帳號雜湊把一部分新帳號導到指定 World，同樣避開排空與冷卻中的 World。
