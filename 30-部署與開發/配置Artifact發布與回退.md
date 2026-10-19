@@ -7,6 +7,8 @@ created: 2026-09-16
 
 本文件涵蓋 `config/data` 版本化 artifact 的發布、拓樸搬遷、備份、回退與清理。Server 只使用 `current.json` 指向的完整 release；不要直接修改 marker 或正在同步中的 bytes。
 
+所有設定維運腳本的相對 `-Root`／`-BackupRoot` 都以倉庫根目錄為基準（不是目前所在目錄）；部署主機上請傳絕對路徑。
+
 World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明確設定 `data_config.allow_legacy_directory: true` 時，才允許直讀 raw bytes；production 配置不得啟用此相容模式。
 
 ## 1. 一般發布

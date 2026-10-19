@@ -206,9 +206,9 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 
 ## 10. GitLab 自動發版（CD）
 
-推 `vX.Y.Z` 標籤（請設為 Protected tag）後，`.gitlab-ci.yml` 依序執行：
+推 `vX.Y.Z` 標籤後，`.gitlab-ci.yml` 依序執行。發版相關 job 的 rules 要求 `$CI_COMMIT_REF_PROTECTED == "true"`，**標籤必須設為 Protected tag**，否則不會觸發發版；`build-images` 與 deploy job 不自動重試（`retry: 0`）。
 
-1. 既有檢查全部通過，`release-info` 產出 `release.json`。
+1. `.release-needs` 的檢查全部通過（含 `alert-rules`、`alloc-guard`），`release-info` 產出 `release.json`；`releasemanifest verify -config-repo deps/PJA-Config` 另要求 `config_version` 是 PJA-Config 子模組指標或其祖先，生成物與子模組漂移時在這裡失敗。
 2. `build-images`：建置並推送六個映像（tag 為去掉 `v` 的版本號），各映像 digest 存成 artifact `images.env`。
 3. `deploy-staging`：預留。目前無第二台主機，設定 `STAGING_ENABLED=true` 與 `STAGING_ENV_FILE` 才啟用。
 4. `deploy-production`：手動按下後執行 [ci-deploy.sh](../../scripts/ci-deploy.sh)。
@@ -216,11 +216,11 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 
 `ci-deploy.sh` 預期關服維護，流程固定：
 
-1. 先拉新映像，備份 MySQL，並預熱（prewarm）停機期間要 `go run` 的 Go 工具（`tools/pja`、`deps/PJA-Database` 的 `datamigrate`）：編譯結果進具名 volume `pja-gocache`（與 `pja-gomod` 模組快取），停機後不必冷編譯，編譯失敗也在關服之前就中止。
+1. 先拉新映像，備份 MySQL，並預熱（prewarm）停機期間要 `go run` 的 Go 工具（`tools/pja`、`deps/PJA-Database` 的 `datamigrate`）：編譯結果進具名 volume `pja-gocache`（與 `pja-gomod` 模組快取），停機後不必冷編譯，編譯失敗也在關服之前就中止。接著以唯讀掛載 `DATA_CONFIG_ROOT` 跑 `configartifact -dry-run` 預檢設定 artifact：來源驗證或換版規則失敗時在這裡中止，**服務尚未停止**。`.env.prod` 以 `scripts/lib/envfile.sh` 的 `env_get` 逐鍵讀（compose dotenv 規則，不 `source`，`MYSQL_DSN` 可不加引號）；CI 中 `ENV_FILE` 必須是絕對路徑。
 2. 停止六個服務（整批替換，不跨發版混跑）。
 3. 發布 `config/data` 設定 artifact。World 啟動會比對 `current.json` 與映像內的 `release.json`，兩者必須同批更新，因此設定隨發版自動發布。
 4. 執行 DB migration，把 `.env.prod` 的映像更新為 `images.env` 的 digest（沒有該檔時用 tag），啟動並等待六個服務 healthy。
-5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。維護中（服務已停、尚未成功）收到 TERM／INT（job 逾時或手動取消）也同樣自動回滾，不會把服務停在關閉狀態。`deploy-production` 的 job timeout 仍是 30 分鐘。
+5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。維護中（服務已停、尚未成功）收到 TERM／INT（job 逾時或手動取消）也同樣自動回滾，不會把服務停在關閉狀態；腳本因 INT 中斷以 130、因 TERM 中斷以 143 結束。`deploy-production` 的 job timeout 仍是 30 分鐘。
 
 自動發布只處理一般設定變更。拓樸或變數 migration（需 `-topology-migration`、`-variable-migration` 與離線搬遷）仍須依 [配置Artifact發布與回退](配置Artifact發布與回退.md) 手動處理，自動發布遇到會失敗並回退。
 

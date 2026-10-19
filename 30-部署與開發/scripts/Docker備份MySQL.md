@@ -7,7 +7,7 @@
 在維運或發版前保留資料回滾點。
 
 ## 流程
-1. 載入 `.env.prod`。
+1. 以 `scripts/lib/envfile.sh` 的 `env_get` 逐鍵讀 `.env.prod`（compose dotenv 規則，不 `source`；`MYSQL_DSN` 不加引號也不會讓 bash 語法錯誤）。
 2. 連到 compose 裡的 `mysql`。
 3. 用 `mysqldump` 匯出後壓成 `.sql.gz`。
 

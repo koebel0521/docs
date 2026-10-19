@@ -13,8 +13,8 @@
 
 這些腳本預設對應：
 
-- `compose.prod.yml`
-- `.env.prod`
+- `docker/compose/compose.prod.yml`
+- `.env.prod`（以 `scripts/lib/envfile.sh` 的 `env_get` 依 compose dotenv 規則逐鍵讀，不 `source`：檔案不需是合法的 bash，`MYSQL_DSN=...@tcp(127.0.0.1:3306)/...` 可不加引號，引號、行內註解、`export` 前綴與 CRLF 都與 compose 的解析一致）
 - `project-prod_prod-redis-data` volume
 
 ## MySQL 備份
