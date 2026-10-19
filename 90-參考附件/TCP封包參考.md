@@ -344,7 +344,7 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 | `tcp_messages_sent_total`、`tcp_messages_received_total` | 收送訊息數 |
 | `tcp_send_queue_depth`、`tcp_send_queue_overflow_total` | socket 送出佇列深度（scrape 時加總各 socket 的 `len(sendCh)`，不再逐則 Inc/Dec）與溢位關閉次數 |
 | `tcp_unknown_messages_total` | 未註冊訊息 |
-| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄；World 盤面指令另有 `board_queue_full`（工作者佇列滿）與 `unknown_player`（玩家不在本 World 或所屬 Gate 不符，同時有取樣 Warn）、`board_decode`（盤面／任務指令 payload 解碼失敗，以 `board.ErrDecode` 區分，記取樣 Warn 而非 Error） |
+| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄，以及 `loop_closed`（事件迴圈已停止後才收到的 S2S 訊息，不執行、歸還物件池並計數）；World 盤面指令另有 `board_queue_full`（工作者佇列滿）與 `unknown_player`（玩家不在本 World 或所屬 Gate 不符，同時有取樣 Warn）、`board_decode`（盤面／任務指令 payload 解碼失敗，以 `board.ErrDecode` 區分，記取樣 Warn 而非 Error） |
 | `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
 | `game_event_queue_overflow_total` | eventCh 滿 |
 | `game_msg_queue_dropped_total` | owner 廣播佇列滿 |
