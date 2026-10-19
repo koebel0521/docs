@@ -79,10 +79,11 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 ### 機密與對外連接埠
 
 - MySQL 帳密只由環境變數提供：compose 把 `MYSQL_USER`／`MYSQL_PASSWORD`／`MYSQL_DATABASE` 以 `MYSQL_USERNAME`／`MYSQL_PASSWORD`／`MYSQL_DBNAME` 注入 Central、World、Chat，設定檔的 `mysql.password` 留空。
-- RabbitMQ 傳遞 World 的任務事件（道具使用、經過起點），設定含這類任務時 World 沒有 RabbitMQ 會拒絕啟動。正式 compose 內含 `rabbitmq` 服務，只在內部網路提供；World 以 `RABBITMQ_URL` 連線，設定檔的 `rabbitmq.url` 留空。
+- RabbitMQ 只承載 Record 事件（World 一般事件與 MySQL record outbox → Record）；任務進度在玩家請求內同步套用，不經 RabbitMQ（任務佇列已於 2026-10-08 移除）。World 啟動時連不上 RabbitMQ 不拒絕啟動，改在背景重試，見 [RabbitMQ 發布可靠性](../00-導讀/RabbitMQ發布可靠性.md#啟動連不上-rabbitmq)。正式 compose 內含 `rabbitmq` 服務，只在內部網路提供；World 以 `RABBITMQ_URL` 連線，設定檔的 `rabbitmq.url` 留空。
+- Central 有設定 Redis（`redis.addr` 或 `redis.master_name` 任一非空）卻在啟動時連不上，直接拒絕啟動，不再靜默降級成單機記憶體模式；兩者皆空才走單機記憶體模式（僅開發與測試）。正式 compose 的 `central` 因此 `depends_on` `redis`（`service_healthy`）。
 - 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
-- 只有 Gate `62001` 與 Lobby `8080` 對外。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
+- 只有 Gate `62001` 與 Lobby `8080` 對外。Lobby `:8080` 同時連線上限 2048、每個來源 IP（IPv6 以 /64 計）每秒 20 個請求、突發 40，超過回 429；每個請求 3 秒處理期限（逾時回 503）；公開 listener（Lobby、Record `/events`）的 keep-alive 閒置上限 5 秒。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
 - 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/`、`lobby-4001/` 分別唯讀掛載到各服務的 `/run/secrets`（Chat、Lobby 也以 S2S 連 Central 60003／60004 接收遊戲時間）；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
 - debug 端點（`/metrics`、`/ready` 等）的來源白名單由 `DEBUG_ALLOW_CIDRS` 決定，compose 會自動在後面接上 `PROD_NETWORK_SUBNET`（預設 `172.30.0.0/24`），讓 Prometheus 容器抓得到 `/metrics`。改了 `PROD_NETWORK_SUBNET` 不必另改白名單；若在設定檔或其他地方手寫 `allowed_cidrs`，須與 `PROD_NETWORK_SUBNET` 同步，否則抓取失敗觸發 `GameServiceDown`。
 - `DEBUG_PPROF_BASIC_AUTH`（`user:pass`）**必填**：`compose.prod.yml` 六個服務都用 `${DEBUG_PPROF_BASIC_AUTH:?...}`，`.env.prod` 沒設定時 `compose up` 直接失敗（`.env.prod.example` 已改為必填範例）。密碼至少 16 字元、不可 `change-me` 開頭；有設定但不合格時，pprof 與 Gate `POST /diag/reconcile` 一律回 503 並記 Error。**升級正式環境前必須先在 `.env.prod` 設好這個值**，否則 `compose up` 會失敗。它保護 `/debug/pprof/*` 與 `POST /diag/reconcile`；而 pprof 本身在正式環境缺省**關閉**（`docker/prod/config/*.yaml` 沒有 `debug.pprof_enabled`，要開需在該服務設定寫 `debug.pprof_enabled: true` 並重啟，見[問題排查筆記](../20-排障與監控/問題排查筆記.md#現場採證服務卡住cpu-高記憶體持續成長)）。
@@ -112,15 +113,15 @@ Central 的主機時鐘就是遊戲時間來源（骰子恢復、冷卻、任務
 AUTO_MIGRATE_DISABLED=true
 ```
 
-設定後，以下三個啟動時期的 AutoMigrate 會被跳過：
+設定後，以下三個啟動時期的 AutoMigrate 會被跳過（這些資料表改由 PJA-Database migration 建立）：
 
-- `Central` → `user_record` 表
+- `Central` → `user` 表（模型 `store.UserRecord`）
 - `Chat` → `chat_message` 表
-- `World` → `player_item` 表
+- `World` → `gamestore.Models()` 的全部資料表（玩家、背包、盤面、任務、record outbox 等）與 `combatstore` 的戰鬥相關資料表
 
 關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。
 
-Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，它只會建立自己的事件分表。
+Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`。Record 只**補建不存在的**事件分表（啟動時預建最近 31 天與明天，每小時檢查一次，每張建表另有 30 秒期限），既有分表不再跑 `AutoMigrate`：模型改了也不會自動 ALTER 正式庫的大表，既有分表的結構變更一律走 PJA-Database plan（行為變更）。
 
 #### 升級時需手動建立的索引與欄位變更
 
@@ -168,7 +169,7 @@ DROP INDEX idx_record_outbox_event_player_id ON record_outbox_event;
 |------|-------------|-------------|----------------|----------------|---------|
 | Central、Chat、World、Record（全部） | 25（`mysql.max_open_conns`） | 10（`mysql.max_idle_conns`） | 1h | 10m | 各服務經 `dbstartup.MySQLConfig` 讀設定檔的 `mysql.max_open_conns`／`mysql.max_idle_conns`，交給 `pkg/mysql`（Central、Chat、World 走 `mysql.Open`，Record 走 `mysql.ConnectWithContext`） |
 
-> `max_open_conns`／`max_idle_conns` 設 0 或負數時用預設值；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。
+> `max_open_conns`／`max_idle_conns` 設 0 或負數時用預設值；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。服務連線另把 session 的 `innodb_lock_wait_timeout` 設為 10 秒（MySQL 預設 50 秒），對齊最長的請求期限：客戶端 ctx 逾時只關 TCP，伺服器端等鎖的語句會等到這個上限才回滾，等鎖超過時回 Error 1205（不觸發斷路器）。維運工具經 `mysql.OpenDSN` 開的連線不套用這個上限。
 
 ## 2. 建 image
 
@@ -252,7 +253,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 ```
 
-重新部署會先對舊容器送 SIGTERM，等到 `stop_grace_period` 才 SIGKILL。各服務為：Gate 75 秒、World 70 秒（關機最壞約 65 秒：玩家資料寫回、落地檔與各關機任務，見[資料一致性](../10-核心流程/資料一致性.md)）、Central 65 秒、Chat 30 秒、Lobby 與 Record 各 20 秒（`compose.prod.yml`；`full`、`debug`、`core-test` 同值）。Gate 的 `drain_timeout`（預設 30 秒）只套給 drain 任務，最壞關機耗時＝各任務逾時加總＋2 次 5 秒（TCP 服務最後再多等一次背景工作 5 秒）。調整任一值，或調高 `drain_timeout`、新增關機任務時，要確認 `stop_grace_period` 仍大於該服務的關機耗時上限；各服務 `shutdown_plan_test.go` 的契約測試會把關。關機任務逾時（drain 除外）會有一筆 Error `shutdown timed out, goroutine dump` 供事後找出卡在哪裡。
+重新部署會先對舊容器送 SIGTERM，等到 `stop_grace_period` 才 SIGKILL。各服務為：Gate 75 秒、World 80 秒（關機最壞約 75 秒：玩家資料寫回、落地檔與各關機任務，其中「stop board workers」任務逾時 10 秒，見[資料一致性](../10-核心流程/資料一致性.md)）、Central 65 秒、Chat 30 秒、Lobby 與 Record 各 20 秒（`compose.prod.yml`；`full`、`debug`、`core-test` 同值）。Gate 的 `drain_timeout`（預設 30 秒）只套給 drain 任務，最壞關機耗時＝各任務逾時加總＋2 次 5 秒（TCP 服務最後再多等一次背景工作 5 秒）。調整任一值，或調高 `drain_timeout`、新增關機任務時，要確認 `stop_grace_period` 仍大於該服務的關機耗時上限；各服務 `shutdown_plan_test.go` 的契約測試會把關。關機任務逾時（drain 除外）會有一筆 Error `shutdown timed out, goroutine dump` 供事後找出卡在哪裡。
 
 ## 7. 回滾
 
