@@ -217,7 +217,7 @@ svc := tcpclient.New(name, baseApp, ownerEvent,
 
 - listen：`<appID>.listen.<service>.ip`（`host:port`），`ParseListenAddr` 解析為 IPv4 TCP 位址
 - dial：`<appID>.dial.<service>` 底下每個項目的 `ip`（`host:port` 字串），`ParseDialAddrs` 只檢查格式與埠號後排序去重，不做 DNS 解析；部分項目無效時略過，全部無效才回錯
-- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、`tcp.max_connections`（未設時讀 `max_connections`，0 不限制）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ParseServerOptions`）
+- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、根層 `max_connections`（正式鍵，0 不限制；`tcp.max_connections` 為已棄用別名，有設定時仍優先並記 Warn）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ParseServerOptions`）
 
 ## 連線生命週期
 
