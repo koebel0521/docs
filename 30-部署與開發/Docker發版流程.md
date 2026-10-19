@@ -212,16 +212,18 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 
 `ci-deploy.sh` 預期關服維護，流程固定：
 
-1. 先拉新映像，備份 MySQL。
+1. 先拉新映像，備份 MySQL，並預熱（prewarm）停機期間要 `go run` 的 Go 工具（`tools/pja`、`deps/PJA-Database` 的 `datamigrate`）：編譯結果進具名 volume `pja-gocache`（與 `pja-gomod` 模組快取），停機後不必冷編譯，編譯失敗也在關服之前就中止。
 2. 停止六個服務（整批替換，不跨發版混跑）。
 3. 發布 `config/data` 設定 artifact。World 啟動會比對 `current.json` 與映像內的 `release.json`，兩者必須同批更新，因此設定隨發版自動發布。
 4. 執行 DB migration，把 `.env.prod` 的映像更新為 `images.env` 的 digest（沒有該檔時用 tag），啟動並等待六個服務 healthy。
-5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。
+5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。維護中（服務已停、尚未成功）收到 TERM／INT（job 逾時或手動取消）也同樣自動回滾，不會把服務停在關閉狀態。`deploy-production` 的 job timeout 仍是 30 分鐘。
 
 自動發布只處理一般設定變更。拓樸或變數 migration（需 `-topology-migration`、`-variable-migration` 與離線搬遷）仍須依 [配置Artifact發布與回退](配置Artifact發布與回退.md) 手動處理，自動發布遇到會失敗並回退。
 
 需要的設定：
 
 - Runner：部署主機安裝 gitlab-runner（shell executor，標籤 `deploy`），具備 docker、git、bash、flock；Go 由 golang 容器提供，不需安裝。
-- CI/CD 變數（Protected）：`PROD_ENV_FILE`（`.env.prod` 的絕對路徑）；`REGISTRY`（未設定時使用 GitLab Container Registry）。
+- CI/CD 變數（Protected）：`PROD_ENV_FILE`（`.env.prod` 的絕對路徑）；`REGISTRY`（未設定時使用 GitLab Container Registry）。`REGISTRY` 指向外部倉庫時還要設 `REGISTRY_USER`、`REGISTRY_PASSWORD`（Protected、Masked）：`scripts/ci-registry.sh` 依此登入／登出實際的 registry 主機，`build-images`、`deploy-staging`、`deploy-production` 共用；沒給帳密且主機不是 GitLab Registry 時略過登入，推送會因未授權失敗。
+- GitLab 專案設定：MR 分支要用 develop 的編譯快取（`.gocache` 的 `fallback_keys` 退回 `gocache-<job>-develop`），必須關閉專案的「Use separate caches for protected branches」；否則 protected 的 develop 與 unprotected 的 MR 分支快取分開，MR 一律冷編譯。
+- `trivy` job 與 `build-images` 的 `trivy image` 都快取 Trivy 漏洞資料庫（job cache／具名 volume `pja-trivy-cache`），避免每次發版下載 7 次。
 - 部署主機以 `git submodule` 取得 `deps/PJA-Database`（job 已設 `GIT_SUBMODULE_STRATEGY: recursive`）。

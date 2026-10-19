@@ -248,6 +248,8 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 ```
 
+重新部署會先對舊容器送 SIGTERM，等到 `stop_grace_period` 才 SIGKILL。World 為 70 秒（關機最壞約 60 秒：玩家資料寫回、落地檔與各關機任務，見[資料一致性](../10-核心流程/資料一致性.md)），Gate 45 秒，Record 20 秒；調整任一值時要確認仍大於該服務的關機耗時上限。
+
 ## 7. 回滾
 
 如果新版本有問題：
