@@ -133,7 +133,6 @@ type Service interface {
 ```go
 type Socket interface {
 	Peer                 // Key()、ID()、SendMsg(Msg)、Context()
-	Conn() net.Conn
 	Data() any
 	RemoteAddr() string
 	LocalAddr() string
