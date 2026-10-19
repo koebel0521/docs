@@ -8,7 +8,7 @@
 
 ## 流程
 1. 檢查 Docker 是否存在。
-2. 跑 `docker compose -f compose.full.yml up -d --build`。
+2. 跑 `docker compose -f docker/compose/compose.full.yml up -d --build`。
 3. 印出 gate、record、RabbitMQ、Grafana、Prometheus 的入口。
 
 ## 主要參數

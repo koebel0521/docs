@@ -7,7 +7,7 @@
 先把 MySQL、Redis、RabbitMQ、Prometheus、Grafana 這類共用依賴起來。
 
 ## 流程
-1. 跑 `docker compose -f compose.deps.yml up -d`。
+1. 跑 `docker compose -f docker/compose/compose.deps.yml up -d`。
 2. 印出常用連線位址。
 
 ## 主要參數

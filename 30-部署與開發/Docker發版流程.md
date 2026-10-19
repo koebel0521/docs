@@ -124,14 +124,16 @@ RECORD_IMAGE=registry.example.com/project/project-record:1.0.0
 
 ## 5. deploy 指令
 
+在 deploy 主機的倉庫根目錄執行（與 `scripts/ci-deploy.sh` 相同）；compose 檔內的掛載路徑相對於 `docker/compose/`，不可把 `compose.prod.yml` 複製到別處單獨使用。
+
 ```bash
-docker compose --env-file .env.prod -f compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 ```
 
 若有 monitoring：
 
 ```bash
-docker compose --env-file .env.prod -f compose.prod.yml --profile monitoring up -d
+docker compose --env-file .env.prod -f docker/compose/compose.prod.yml --profile monitoring up -d
 ```
 
 ## 6. deploy 後驗證
@@ -170,7 +172,7 @@ RECORD_IMAGE=registry.example.com/project/project-record:0.9.9
 然後再跑：
 
 ```bash
-docker compose --env-file .env.prod -f compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 ```
 
 ## 8. release 紀錄建議
