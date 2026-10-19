@@ -34,7 +34,7 @@ docker compose -f docker/compose/compose.deps.yml up -d
 
 這會啟動：
 
-- `mysql`
+- `mysql`（World 等服務用）、`mysql-central`（Central 專用）
 - `redis`
 - `rabbitmq`
 - `prometheus`
@@ -43,6 +43,7 @@ docker compose -f docker/compose/compose.deps.yml up -d
 依賴對外入口：
 
 - MySQL: `127.0.0.1:13306`
+- Central MySQL: `127.0.0.1:13307`（`config/dev/central.yaml` 的 `mysql.port`）
 - Redis: `127.0.0.1:16379`
 - RabbitMQ: `127.0.0.1:25672`
 - Prometheus: [http://localhost:39090](http://localhost:39090)
@@ -70,7 +71,7 @@ GoLand 本機執行請使用：
 這些設定檔與 Docker 版最大的差異是：
 
 - MySQL / Redis 改走宿主機埠：
-  - `127.0.0.1:13306`
+  - `127.0.0.1:13306`（Central 為 `127.0.0.1:13307`）
   - `127.0.0.1:16379`
 - RabbitMQ 改走宿主機埠：
   - `127.0.0.1:25672`
