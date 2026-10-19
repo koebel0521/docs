@@ -299,15 +299,15 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 
 ## 心跳
 
-- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `msgsys.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq`；對端以 `msgsys.HandleHeartbeatReq` 回 `HeartbeatRes`，發起端用 `msgsys.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerDeadline`）收不到任何資料就讀取逾時斷線
-- 玩家：Client 送 `HeartbeatRequest`（2005），Gate `onHeartbeatReq` 回 `HeartbeatResponse`；已登入的連線才刷新最後心跳時間。Gate 每 30 秒掃描，超過 `userHeartbeatTimeout = 90s` 沒心跳即斷線（`game_heartbeat_timeout_total{service="gate_user"}`）；建立連線後 30 秒（`userLoginHandshakeTimeout`）內未完成登入也斷線
+- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `s2shandshake.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq`；對端以 `system.HandleHeartbeatReq`（`pkg/msg/system`）回 `HeartbeatRes`，發起端用 `s2shandshake.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerDeadline`）收不到任何資料就讀取逾時斷線
+- 玩家：Client 送 `HeartbeatRequest`（2005），Gate `onHeartbeatReq` 回 `HeartbeatResponse`；已登入的連線才刷新最後心跳時間。Gate 每 5 秒（`userConnCheckInterval`）掃描，超過 `userHeartbeatTimeout = 90s` 沒心跳即斷線（逾時偵測上限約 95 秒）（`game_heartbeat_timeout_total{service="gate_user"}`）；建立連線後 30 秒（`userLoginHandshakeTimeout`）內未完成登入也斷線
 
 ## ConnectInfo 與 ServiceHello
 
 S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出：
 
-1. `ConnectInfo`（30101）：本節點 `AppID`。對端以 `msgsys.BindConnectInfo` 綁到 socket ID；socket 已綁其他 ID 時關閉連線
-2. `ServiceHello`（30105）：`msgsys`（套件內 `sendServiceHello`）送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
+1. `ConnectInfo`（30101）：本節點 `AppID`。對端以 `system.BindConnectInfo`（`pkg/msg/system`；只綁定的處理器用 `s2shandshake.BindConnectInfoOnly`）綁到 socket ID；socket 已綁其他 ID 時關閉連線
+2. `ServiceHello`（30105）：`s2shandshake`（套件內 `sendServiceHello`）送出 `ServiceIdentity`（`Release`、`ServerCommit`、`ProtocolSchemaHash`、`ClientContract`，另帶只供診斷的 `AppType`＝`ServiceKind` 與 `AppID`）
 
 接收端以 `s2shandshake.RegisterServiceHello(svc)` 註冊處理：`verifyServiceHello` 任一項與本節點不同就記錄 `service hello mismatch, closing socket`、計 `game_service_hello_mismatch_total` 並關閉連線，擋下混版本部署。身分由啟動流程 `s2shandshake.SetServiceIdentity` 設定；沒設定（單元測試）時不送、不驗證也不要求。
 

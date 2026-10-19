@@ -89,7 +89,7 @@ TCP 是串流，一次 `Read` 不一定剛好拿到一個完整 frame，需自�
 | `Coder.Decode(reader, buf)` | 從 reader 讀出一個 frame，回傳 `msgID` 與 `payload` |
 | `Coder.DecodePooled(reader)` | 物件池版本解碼 |
 
-`tcpsocket.Coder` 即 `framecodec.Coder` 的別名，Server／Client 連線預設使用本格式。
+Socket／OwnerBase 直接持有 `*framecodec.Coder`（`pkg/tcpsocket` 已沒有 `Coder` 別名），Server／Client 連線預設使用本格式。
 
 ## 限制摘要
 
