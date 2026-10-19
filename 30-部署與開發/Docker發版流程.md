@@ -226,6 +226,6 @@ docker compose --env-file .env.prod -f compose.prod.yml up -d
 
 - Runner：部署主機安裝 gitlab-runner（shell executor，標籤 `deploy`），具備 docker、git、bash、flock；Go 由 golang 容器提供，不需安裝。
 - CI/CD 變數（Protected）：`PROD_ENV_FILE`（`.env.prod` 的絕對路徑）；`REGISTRY`（未設定時使用 GitLab Container Registry）。`REGISTRY` 指向外部倉庫時還要設 `REGISTRY_USER`、`REGISTRY_PASSWORD`（Protected、Masked）：`scripts/ci-registry.sh` 依此登入／登出實際的 registry 主機，`build-images`、`deploy-staging`、`deploy-production` 共用；沒給帳密且主機不是 GitLab Registry 時略過登入，推送會因未授權失敗。
-- GitLab 專案設定：MR 分支要用 develop 的編譯快取（`.gocache` 的 `fallback_keys` 退回 `gocache-<job>-develop`），必須關閉專案的「Use separate caches for protected branches」；否則 protected 的 develop 與 unprotected 的 MR 分支快取分開，MR 一律冷編譯。
+- GitLab 專案設定：**不要關閉**專案的「Use separate caches for protected branches」。protected 的 develop 與 unprotected 的 MR 分支快取分開，MR 第一次冷編譯（`.gocache` 的 `fallback_keys` 退回 `gocache-<job>-develop` 拿不到）是刻意接受的代價；關掉它，未受保護的 MR lint job（模組快取為 pull-push）就能寫入受保護分支與 tag pipeline 共用的快取。
 - `trivy` job 與 `build-images` 的 `trivy image` 都快取 Trivy 漏洞資料庫（job cache／具名 volume `pja-trivy-cache`），避免每次發版下載 7 次。
 - 部署主機以 `git submodule` 取得 `deps/PJA-Database`（job 已設 `GIT_SUBMODULE_STRATEGY: recursive`）。
