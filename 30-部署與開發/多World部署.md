@@ -82,7 +82,7 @@ game_store:
 - 兩個 Gate × 三個 World 全網狀運作正常，任一端重啟不需重啟另一端。
 - 同帳號跨 Gate 重複登入：舊 Gate 收到 `AuthReLogin`、清 session 並通知玩家，但**不關閉 TCP**；同 Gate 重複登入則直接關閉舊 socket。新連線都存活。
 - 排空只影響新帳號指派；三個 World 全部排空時新帳號回 `AuthServiceUnavailable`、不建立帳號，既有帳號仍可登入。
-- canary 切片命中的新帳號確定性進指定 World；調整需重啟 Central，沒有執行期 API。
+- canary 切片命中的新帳號確定性進指定 World；`traffic_slice_*` 可熱重載（改設定檔即可，壞值保留上一版有效切片），沒有執行期 API。
 
 細節見[壓測紀錄 2026-10-16 第四輪](../90-參考附件/歷史/壓測紀錄-2026-10-16-第四輪.md)。
 
