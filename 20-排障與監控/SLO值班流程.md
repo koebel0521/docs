@@ -6,11 +6,23 @@
 ## 快速決策
 
 1. 先開 [本機監控](./本機監控.md)
-2. 先看 `tools/dephealth`
-3. 再看 `tools/opsdiag`
+2. 先看 `tools/private/dephealth`（私人工具，見下方「沒有私人工具時」）
+3. 再看 `tools/private/opsdiag`（同上）
 4. 若看到 `mismatch` / `error`，先進 [狀態對帳流程](./狀態對帳流程.md)
 5. 若看到 `status=degraded`，先看 `Capacity Budget`
 6. 最後才進 SLO 類別與 handler-level log
+
+## 沒有私人工具時
+
+本 runbook 與[問題排查筆記](./問題排查筆記.md)提到的 `tools/private/*`（dephealth、opsdiag、protocoldiag、supportdiag、playersnapshot、consistencysnapshot、staterepair、datasurgeon 等）以及 `go run ./tools/private/pja ...` 都是**私人工具**：放在被 `.gitignore` 忽略的 `tools/private/`，不在版控，換一台機器或乾淨 clone 沒有。版控內的 `tools/pja` 只有 `configartifact`、`configaudit`、`releasemanifest` 三個子命令。沒有私人工具時，直接打各服務的診斷埠（Central 6060、Gate 6061、World 6062、Lobby 6064、Record 6065、Chat 6066；正式環境只綁容器內或 `127.0.0.1`，需在主機上或經 SSH 通道）：
+
+| 私人工具 | 等價的版控內做法 |
+|------|------|
+| `dephealth`（readiness、queue 深度） | `curl -s localhost:<埠>/ready`；`curl -s localhost:<埠>/metrics \| grep -E 'game_event_queue_depth\|game_msg_queue_dropped_total'`；或 Grafana／Prometheus 的對應面板 |
+| `opsdiag`（readiness、路由查核、關鍵 metrics） | 各服務 `/ready`；Gate `curl -s "localhost:6061/diag/session?playerID=<id>"`、`/diag/player?playerID=<id>`；PromQL 看 SLO 面板 |
+| `protocoldiag` | `curl -s localhost:<埠>/diag/protocol`（Central、Gate、World） |
+| `supportdiag`／`playersnapshot` | Gate `/diag/player`、`/diag/session`；Redis `GET player:{playerID}`（登入狀態快照 JSON） |
+| `staterepair`／`datasurgeon` | 沒有等價的版控內工具；修 Redis 衍生資料前先備份（[[Docker備份還原]]），依 [Redis 鍵值結構](../90-參考附件/Redis鍵值結構.md) 手動處理，或請持有私人工具的人執行 |
 
 ## 先決定看哪個 SLO
 
