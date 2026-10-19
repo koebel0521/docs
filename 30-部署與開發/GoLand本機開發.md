@@ -1,12 +1,12 @@
 # GoLand 本機開發
 
-這份文件說明如何把依賴交給 Docker，並讓 `central` / `world` / `gate` / `record` / `user` 直接在本機用 GoLand 啟動與除錯。
+這份文件說明如何把依賴交給 Docker，並讓 `central` / `world` / `gate` / `record` / `lobby` / `chat` / `user` 直接在本機用 GoLand 啟動與除錯。
 
 ## 目標
 
 - 開發時：
   - `mysql` / `redis` / `rabbitmq` / `prometheus` / `grafana` 用 Docker 跑
-  - `central` / `world` / `gate` / `record` / `user` 用 GoLand 本機跑
+  - `central` / `world` / `gate` / `record` / `lobby` / `chat` / `user` 用 GoLand 本機跑
 - 驗證整套容器時：
 - 使用 [[Docker全堆疊]]
 - 上線時：
@@ -63,6 +63,8 @@ GoLand 本機執行請使用：
 - [world.yaml](../../config/dev/world.yaml)
 - [gate.yaml](../../config/dev/gate.yaml)
 - [record.yaml](../../config/dev/record.yaml)
+- [lobby.yaml](../../config/dev/lobby.yaml)
+- [chat.yaml](../../config/dev/chat.yaml)
 - [user.yaml](../../config/dev/user.yaml)
 
 這些設定檔與 Docker 版最大的差異是：
@@ -94,6 +96,10 @@ GoLand 開啟的專案根目錄應是 `PJA-Project`，`PJA-Server` 是其中的�
 - Package：`local/server/cmd/gate`
 - `Record`
 - Package：`local/server/cmd/record`
+- `Lobby`
+- Package：`local/server/cmd/lobby`
+- `Chat`
+- Package：`local/server/cmd/chat`
 - `User`
 - Package：`local/server/tools/user`
 
@@ -131,15 +137,21 @@ DEBUG_ALLOW_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 再分別指定 `APP_CONFIG`：
 
 - `Central`
-  - `APP_CONFIG=E:/project/config/dev/central.yaml`
+  - `APP_CONFIG=config/dev/central.yaml`
 - `World`
-  - `APP_CONFIG=E:/project/config/dev/world.yaml`
+  - `APP_CONFIG=config/dev/world.yaml`
 - `Gate`
-  - `APP_CONFIG=E:/project/config/dev/gate.yaml`
+  - `APP_CONFIG=config/dev/gate.yaml`
 - `Record`
-  - `APP_CONFIG=E:/project/config/dev/record.yaml`
+  - `APP_CONFIG=config/dev/record.yaml`
+- `Lobby`
+  - `APP_CONFIG=config/dev/lobby.yaml`
+- `Chat`
+  - `APP_CONFIG=config/dev/chat.yaml`
 - `User`
-  - `APP_CONFIG=E:/project/config/dev/user.yaml`
+  - `APP_CONFIG=config/dev/user.yaml`
+
+`APP_CONFIG` 只是 `-config` 的預設值（`pkg/startup/entry.go`），路徑相對於 Working directory（`$PROJECT_DIR$/PJA-Server`）；Program arguments 已給 `-config` 時以旗標為準，兩者擇一即可，不要再寫舊的 `E:/project/...` 絕對路徑。
 
 `DEBUG_ALLOW_CIDRS` 的目的，是讓 Docker 裡的 Prometheus 可以抓本機服務的 `/metrics`。
 
@@ -148,9 +160,10 @@ DEBUG_ALLOW_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 1. 啟動 Docker 依賴
 2. 在 GoLand 啟動 `Central`
 3. 在 GoLand 啟動 `Record`
-4. 在 GoLand 啟動 `World`
-5. 在 GoLand 啟動 `Gate`
-6. 在 GoLand 啟動 `User`
+4. 在 GoLand 啟動 `Lobby`、`Chat`
+5. 在 GoLand 啟動 `World`
+6. 在 GoLand 啟動 `Gate`
+7. 在 GoLand 啟動 `User`
 
 順序與一般本機啟動相同，因為：
 
@@ -165,8 +178,10 @@ DEBUG_ALLOW_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 2. 在 `User` 的執行視窗輸入：
 
 ```text
-login 0 alice
+login 0 alice <password>
 ```
+
+新帳號必須帶密碼（首次登入會以 bcrypt 雜湊存入），不帶密碼 Central 回 `AuthWrongPassword`，登入不會成功。
 
 3. 確認：
 - `User` 出現 `login success`

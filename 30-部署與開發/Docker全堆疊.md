@@ -132,10 +132,11 @@ docker attach project-user
 目前最小可用指令是：
 
 ```text
-login 0 alice
+login 0 alice <password>
 ```
 
 成功時可在 `user` 端看到類似 `login success` 的輸出。
+新帳號必須帶密碼（首次登入會以 bcrypt 雜湊存入），不帶密碼 Central 回 `AuthWrongPassword`，不會出現 `login success`；只有舊的無密碼帳號可省略。
 其中 `0` 是數字形式的帳號類型；User 會依 `config/docker/user.yaml` 的 `tcp.<appID>.dial` 設定連線到 Gate。
 World 啟動時會將 Redis 能力公告放在背景工作執行，不會阻塞應用程式事件迴圈；因此登入請求可正常由 World 回傳至 Gate。
 
