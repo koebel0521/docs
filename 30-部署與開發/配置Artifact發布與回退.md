@@ -17,6 +17,14 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
 
 發布流程會先驗證所有 bytes、checksum、schema 與跨表規則，再建立不可變 release，最後原子更新 `current.json`。`sync-data-config.ps1` 只適合 build-time 同步，不是 runtime 發布工具。
 
+實際發布前先加 `-DryRun`（對應 `configartifact -dry-run`）：只做來源驗證與換版規則檢查，不寫 releases、不動 `current.json`，輸出多一行 `dry_run=true`：
+
+```powershell
+.\scripts\publish-data-config.ps1 -Source config\data -Root config\data -DryRun
+```
+
+`-dry-run` 只適用發布類模式，不可與 `-switch-version`、`-verify-topology-lineage` 併用（會回用法錯誤，結束碼 2）。
+
 可用 `-VerifyTopologyLineage` 檢查目前 artifact 的拓樸 lineage：
 
 ```powershell
@@ -35,13 +43,14 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
   -TopologyBaselineDSN $env:WORLD_MYSQL_DSN
 ```
 
-發布後重新啟動 World。盤面版本初始化與離線搬遷：
+發布後重新啟動 World。盤面版本檢查與初始化／離線搬遷：
 
 ```powershell
 .\scripts\initialize-board-topology.ps1 -Root config\data -Status
-.\scripts\initialize-board-topology.ps1 -Root config\data -Apply
 .\scripts\initialize-board-topology.ps1 -Root config\data -MigrateCurrent -Timeout 30m
 ```
+
+`initialize-board-topology.ps1` 沒有 `-Apply`，也不是不帶旗標就初始化：`-Status`（只報告各拓樸版本的盤面數）與 `-MigrateCurrent`（把持久化盤面搬到目前版本，同時完成初始化）必須擇一，兩者不可併用，兩者都不給會直接報錯。
 
 `-MigrateCurrent` 可用 `-StartAfterPlayerID` 續跑；每筆盤面搬遷是交易式且可安全重試。完成後用 `-Status -RequireCurrent` 驗證所有盤面已到目前版本。
 
