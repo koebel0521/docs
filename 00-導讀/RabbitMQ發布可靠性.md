@@ -23,4 +23,6 @@ Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，�
 
 ## 消費端重試
 
+批次消費（`RunBatch`）全部成功時，批尾只送一次 `Ack(tag, multiple=true)`（單一 goroutine 依序處理同一 channel 的投遞，本批之前的投遞都已 ack／nack，所以只確認本批），省下逐筆 ack 的 frame 寫出與 flush；整批失敗退回逐筆處理時維持 `multiple=false`，避免連帶確認其他投遞。
+
 Record handler 回傳暫時性錯誤時，消費端 NACK 並放回佇列，第 n 次失敗後暫停 1 秒 × 2^(n-1)（上限 30 秒）再取下一筆；同一事件失敗 20 次或回傳永久性錯誤（例如 `occurred_at` 超出可寫入範圍，或缺少 `OccurredAt`：Record 只採生產者填的事件時間，不以接收時間補）時 NACK 不重排，交給死信佇列。handler panic 會被接住並記 `recordmq: handler panic`：整批 panic 視為整批失敗、退回逐筆，逐筆 panic 視為永久性錯誤直接進死信。暫停期間整個消費者停止取件：暫時性錯誤多半是下游 MySQL 故障，整體放慢才不會空轉。

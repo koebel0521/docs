@@ -159,12 +159,9 @@ DROP INDEX idx_record_outbox_event_player_id ON record_outbox_event;
 
 | 服務 | MaxOpenConns | MaxIdleConns | ConnMaxLifetime | ConnMaxIdleTime | 設定方式 |
 |------|-------------|-------------|----------------|----------------|---------|
-| Central (pkg) | 25 | 10 | 1h | 10m | `pkg/mysql.Connect` 內建 |
-| Chat | 依 `cfg.MaxOpenConns` | 依 `cfg.MaxIdleConns` | 依 `cfg.ConnMaxLifetime` | 10m | `mysql_connect.go` 覆寫 |
-| World | 25（可設 `MaxOpenConns`） | 10（可設 `MaxIdleConns`） | 1h | 10m | `gamedb.Config` 設 >0 時套用 |
-| Record | 25 | 10 | 1h | 10m | `pkg/mysql.ConnectWithContext` 內建 |
+| Central、Chat、World、Record（全部） | 25（`mysql.max_open_conns`） | 10（`mysql.max_idle_conns`） | 1h | 10m | 各服務經 `dbstartup.MySQLConfig` 讀設定檔的 `mysql.max_open_conns`／`mysql.max_idle_conns`，交給 `pkg/mysql`（Central、Chat、World 走 `mysql.Open`，Record 走 `mysql.ConnectWithContext`） |
 
-> World 的 `MaxOpenConns` / `MaxIdleConns` 設為 0 時沿用 pkg 預設值。
+> `max_open_conns`／`max_idle_conns` 設 0 或負數時用預設值；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。
 
 ## 2. 建 image
 
