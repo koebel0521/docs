@@ -35,7 +35,7 @@
 
 ### 編碼
 
-- `Coder.WriteFrame(w, id, payload)`：payload ≤ 250 bytes 時用堆疊上的 256 byte 陣列組 frame，否則從分級池取緩衝，複製 payload 後一次 `Write`
+- `Coder.WriteFrame(w, id, payload)`：依 frame 大小從分級池取緩衝（超過最大等級則直接配置），複製 payload 後一次 `Write`，沒有堆疊陣列的小訊息路徑
 - `Coder.WriteFramePrebuilt(w, id, frame)`：呼叫端已在 frame 前預留 6 byte，只填 header 後寫出。`Socket` 的送出快速路徑用它（見下方 PackTo）
 
 ### 解碼
@@ -51,14 +51,14 @@
 
 | 範圍 | 用途 | 例 |
 |------|------|------|
-| 0 | `ProtocolMessageID_Unknown`；收到 0 時 socket 記錄錯誤後略過該 frame，保持連線 | |
+| 0 | `ProtocolMessageID_Unknown`；玩家連線收到 0 記 Warn 後直接斷線，S2S 連線記 Error 後略過該 frame、保持連線（`handleInvalidMsgID`） | |
 | 1–31 | Client 盤面、戰鬥、任務 | `LoadPlayerRequest = 1`、`RollDiceCommand = 3`、`ChangeSetEvent = 31` |
 | 1001–1004 | Client 登入登出 | `LoginRequest = 1001`、`LogoutResponse = 1004` |
 | 2005–2011 | Client 連線：心跳、校時、版本握手 | `HeartbeatRequest = 2005`、`HelloRequest = 2009`、`VersionNotice = 2011` |
 | 2201–2206 | Client 聊天 | `ChatJoin = 2201`、`ChatSync = 2206` |
-| 30001–30012 | S2S 登入登出鏈 | `LoginGateToCentral = 30001`、`LoginRejectedGateToCentral = 30012` |
+| 30001–30013 | S2S 登入登出鏈 | `LoginGateToCentral = 30001`、`LoginRejectedGateToCentral = 30012`、`LogoutBatchCentralToWorld = 30013` |
 | 30101–30105 | S2S 連線 | `ConnectInfo = 30101`、`HeartbeatReq = 30102`、`HeartbeatRes = 30103`、`TimeSync = 30104`、`ServiceHello = 30105` |
-| 30201 | S2S 系統聊天 | `ChatSystem` |
+| 30201–30202 | S2S 聊天 | `ChatSystem`、`ChatDeliverBatch = 30202` |
 | 30301–30304 | S2S 轉發 | `ForwardToWorld`、`SyncUsersGateToCentral`、`ClientBoardCommand`、`BoardClientEvent` |
 | 30401–30402 | S2S 對帳 | `AuditSnapshotRequest`、`AuditSnapshotResponse` |
 | 30403–30405 | 頻道（已停用） | `ChannelBroadcast`、`ChannelMembershipUpdate`、`ChannelMembershipSnapshot`；Go 端已無發送與接收，定義待下次升版移除 |
@@ -100,7 +100,7 @@ type Msg interface {
 
 ### 預序列化訊息（writev 路徑）
 
-已經是 wire bytes 的訊息（`OwnedRaw`、`Raw`、`packedMsg`，實作套件內介面 `prepackedMsg`，即 `Payload() []byte`）不再複製進 `sendBuf`，改走 `writePrepacked`：
+已經是 wire bytes 的訊息（`OwnedRaw`、`packedMsg`，實作套件內介面 `prepackedMsg`，即 `Payload() []byte`）不再複製進 `sendBuf`，改走 `writePrepacked`：
 
 - payload 放得進 bufio 剩餘空間：`Write` 6 byte header 與 payload，只剩 bufio 一次複製
 - 放不下：先 `Flush`，再以 `net.Buffers{hdr, payload}.WriteTo(conn)` 一次 writev 寫出，零複製
@@ -113,11 +113,10 @@ type Msg interface {
 
 ```go
 type Service interface {
-	socketFinder   // Get(key)、ByID(id)、All()、Random()
+	socketFinder   // Get(key)、ByID(id)、All()、Random()、Range(fn)、Len()
 	Broadcaster    // SendAll(Msg)
 	AppID() int64
 	Name() string
-	Start()
 	Close()
 	MsgFactory(protocol.MessageID) MsgFactory
 	MsgHandler(protocol.MessageID) MsgHandler
@@ -281,7 +280,7 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 
 - `Socket.SendMsg`：非阻塞送入 `sendCh`；佇列已達深度（`WithSendQueueDepth` 或 `DefaultSocketSendQueueDepth`）代表對端長時間不讀，直接關閉連線並計 `tcp_send_queue_overflow_total`。Gate 玩家連線深度 1024
 - sendLoop 單一 goroutine 依序寫入 `bufio.Writer`（4KB），佇列空了才 `Flush`，連續訊息合併成一次寫入
-- `OwnerBase.SendAll(msg)`：工作放進 owner 佇列（server 10000、client 1000）由背景 goroutine 執行；佇列滿時丟棄並計 `game_msg_queue_dropped_total`。執行時 `Sockets.SendAll` 只 `Pack` 一次，包成引用計數的 `packedMsg` 分送給快照中的每個 socket
+- `OwnerBase.SendAll(msg)`：直接呼叫非阻塞的 `Sockets.SendAll`，沒有 owner 佇列與轉送 goroutine（舊的 owner 廣播佇列已移除）；owner 已關閉則歸還 msg 並略過。`Sockets.SendAll` 只 `Pack` 一次，包成引用計數的 `packedMsg` 分送給快照中的每個 socket
 - `OwnerBase.Async(f)`：在 owner 的 WaitGroup 下開 goroutine，`Close` 會等它結束
 
 ## Deadline
@@ -347,7 +346,7 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 | `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄，以及 `loop_closed`（事件迴圈已停止後才收到的 S2S 訊息，不執行、歸還物件池並計數）；World 盤面指令另有 `board_queue_full`（工作者佇列滿）與 `unknown_player`（玩家不在本 World 或所屬 Gate 不符，同時有取樣 Warn）、`board_decode`（盤面／任務指令 payload 解碼失敗，以 `board.ErrDecode` 區分，記取樣 Warn 而非 Error） |
 | `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
 | `game_event_queue_overflow_total` | eventCh 滿 |
-| `game_msg_queue_dropped_total` | owner 廣播佇列滿 |
+| `game_msg_queue_dropped_total` | 目前只剩 Chat 房間工作佇列滿（`service="chat_room"`）；owner 廣播佇列已移除 |
 | `game_service_hello_mismatch_total` | 發版身分不一致、逾時未送 hello 或 hello 前送其他訊息 |
 | `game_heartbeat_timeout_total` | 玩家心跳逾時 |
 
