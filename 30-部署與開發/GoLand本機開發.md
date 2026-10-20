@@ -217,7 +217,7 @@ login 0 alice <password>
   - `config/dev/*.yaml`
   - `docker/compose/compose.deps.yml`
 - Docker 全堆疊驗證用：
-  - `config/dev/*.yaml`
+  - `config/docker/*.yaml`（`compose.full.yml` 掛載進容器的設定）
   - `docker/compose/compose.full.yml`
 
 正式上線時，建議再額外準備 production 專用的：

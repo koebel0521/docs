@@ -3,12 +3,15 @@
 這份文件描述如何用單一 `docker compose` 啟動完整遊戲專案。
 若你要和 production 同機並跑，請改用 [compose.debug.yml](../../docker/compose/compose.debug.yml)。
 
+- `mysql-central`（Central 帳號庫）
 - `mysql`
 - `redis`
 - `central`
 - `world`
+- `chat`
 - `record`
 - `gate`
+- `lobby`
 - `user`
 - `rabbitmq`
 - `prometheus`
@@ -184,13 +187,15 @@ docker compose -f docker/compose/compose.full.yml up -d --build
 
 ## 配置檔
 
-容器內配置位於：
+容器內配置位於 `config/docker/`（`compose.full.yml` 以唯讀掛載到容器的 `/config`，與本機開發用的 `config/dev` 不同）：
 
-- [central.yaml](../../config/dev/central.yaml)
-- [world.yaml](../../config/dev/world.yaml)
-- [record.yaml](../../config/dev/record.yaml)
-- [gate.yaml](../../config/dev/gate.yaml)
-- [user.yaml](../../config/dev/user.yaml)
+- [central.yaml](../../config/docker/central.yaml)
+- [world.yaml](../../config/docker/world.yaml)
+- [record.yaml](../../config/docker/record.yaml)
+- [gate.yaml](../../config/docker/gate.yaml)
+- [chat.yaml](../../config/docker/chat.yaml)
+- [lobby.yaml](../../config/docker/lobby.yaml)
+- [user.yaml](../../config/docker/user.yaml)
 
 debug stack 仍使用同一組容器內 config，但會把 `DEBUG_PROTOCOL_RECORD=true` 打進容器環境，讓協定記錄預設開啟。
 
