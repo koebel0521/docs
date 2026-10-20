@@ -13,7 +13,7 @@ Central 在處理 `LoginGateToCentral` 時，根據玩家是否已有帳號記�
 
 ### Canary 流量切片
 
-`traffic_slice_percent`（0 停用）與 canary World 由 `App.SetTrafficSlice(percent, worldID)` 設定（啟動與熱重載都經 `cmd/central/traffic_slice_config.go`）。`App.TrafficSliceWorldID(account)` 以帳號的 FNV-1a 雜湊對 100 取餘數，小於 `percent` 的新帳號導向 canary World；canary World 也必須可選（未排空、不在重連冷卻、socket 存在），否則退回下面的最少負載選擇。只影響新玩家，既有玩家仍回資料庫記錄的 World。
+`traffic_slice_percent`（0 停用）與 canary World 由 `App.SetTrafficSlice(percent, worldID)` 設定（啟動與熱重載都經 `cmd/central/internal/services/traffic_slice.go` 的 `TrafficSliceReloader`：`cmd/central/run.go` 註冊熱重載，App 建好後 `Attach` 套用，解析在 `ParseTrafficSlice`）。`App.TrafficSliceWorldID(account)` 以帳號的 FNV-1a 雜湊對 100 取餘數，小於 `percent` 的新帳號導向 canary World；canary World 也必須可選（未排空、不在重連冷卻、socket 存在），否則退回下面的最少負載選擇。只影響新玩家，既有玩家仍回資料庫記錄的 World。
 
 ### 最少負載優先
 
