@@ -57,7 +57,7 @@ graph LR
 - `LOBBY_IMAGE`
 - `RECORD_IMAGE`
 - `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`）
-- `LOTTERY_SECRET`：World 抽獎種子機密，覆寫 `docker/prod/config/world.yaml` 的 `lottery.secret`；未設定時 compose 直接報錯
+- `LOTTERY_SECRET`：World 抽獎種子機密，覆寫 `docker/prod/config/world.yaml` 的 `lottery.secret`；未設定時 compose 直接報錯；World 啟動另拒絕短於 16 字元或 `change-me`／`change_me` 開頭的值（照抄範本佔位會啟動失敗）
 - `GRAFANA_ADMIN_USER`（預設 `admin`）
 - `PROMETHEUS_IMAGE`／`ALERTMANAGER_IMAGE`／`GRAFANA_IMAGE`／`REDIS_IMAGE`／`RABBITMQ_IMAGE`／`MYSQL_IMAGE`：第三方映像，範本已釘 digest，升級時一併更新
 - `MIGRATION_PLAN_DIR`（留空用映像內 `/src/migrations`；自訂須為宿主機絕對路徑）／`MIGRATION_ENVIRONMENT`（`production`）／`MIGRATION_TIMEOUT`（`5m`）／`MIGRATION_LOCK_TIMEOUT`（`30s`）：一次性 migration job 使用，服務啟動不跑 migration
@@ -83,11 +83,12 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - Central 有設定 Redis（`redis.addr` 或 `redis.master_name` 任一非空）卻在啟動時連不上，直接拒絕啟動，不再靜默降級成單機記憶體模式；兩者皆空才走單機記憶體模式（僅開發與測試）。正式 compose 的 `central` 因此 `depends_on` `redis`（`service_healthy`）。
 - 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
-- 只有 Gate `62001` 與 Lobby `8080` 對外。Lobby `:8080` 同時連線上限 2048、每個來源 IP（IPv6 以 /64 計）每秒 20 個請求、突發 40，超過回 429；每個請求 3 秒處理期限（逾時回 503）；公開 listener（Lobby、Record `/events`）的 keep-alive 閒置上限 5 秒。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
+- 只有 Gate `62001` 與 Lobby `8080` 對外。Lobby `:8080` 同時連線上限 2048、每個來源 IP（IPv6 以 /64 計）每秒 20 個請求、突發 40，超過回 429；每個請求 3 秒處理期限（唯讀 GET／HEAD 逾時回 503；寫入型請求只設 ctx 期限，不由中介層回 503，GM 重試仍須帶 `operationID`）；公開 listener（Lobby、Record `/events`）的 keep-alive 閒置上限 5 秒。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
 - 正式設定一律啟用 S2S 驗證：`.env.prod` 的 `S2S_SECRET_DIR` 指向機密目錄，compose 把其中的 `central/`、`chat/`、`world-1001/`、`gate-2001/`、`lobby-4001/` 分別唯讀掛載到各服務的 `/run/secrets`（Chat、Lobby 也以 S2S 連 Central 60003／60004 接收遊戲時間）；缺少憑證或 token 時服務拒絕啟動。機密的產生、發送與輪替見 [[S2S身份驗證]]。
 - debug 端點（`/metrics`、`/ready` 等）的來源白名單由 `DEBUG_ALLOW_CIDRS` 決定，compose 會自動在後面接上 `PROD_NETWORK_SUBNET`（預設 `172.30.0.0/24`），讓 Prometheus 容器抓得到 `/metrics`。改了 `PROD_NETWORK_SUBNET` 不必另改白名單；若在設定檔或其他地方手寫 `allowed_cidrs`，須與 `PROD_NETWORK_SUBNET` 同步，否則抓取失敗觸發 `GameServiceDown`。
 - `DEBUG_PPROF_BASIC_AUTH`（`user:pass`）**必填**：`compose.prod.yml` 六個服務都用 `${DEBUG_PPROF_BASIC_AUTH:?...}`，`.env.prod` 沒設定時 `compose up` 直接失敗（`.env.prod.example` 已改為必填範例）。密碼至少 16 字元、不可 `change-me` 開頭；有設定但不合格時，pprof 與 Gate `POST /diag/reconcile` 一律回 503 並記 Error。**升級正式環境前必須先在 `.env.prod` 設好這個值**，否則 `compose up` 會失敗。它保護 `/debug/pprof/*` 與 `POST /diag/reconcile`；而 pprof 本身在正式環境缺省**關閉**（`docker/prod/config/*.yaml` 沒有 `debug.pprof_enabled`，要開需在該服務設定寫 `debug.pprof_enabled: true` 並重啟，見[問題排查筆記](../20-排障與監控/問題排查筆記.md#現場採證服務卡住cpu-高記憶體持續成長)）。
 - `LOG_ASYNC_BUFFER`（選填，筆數，預設 0＝關閉，行為與以前相同）：開啟後日誌進 zerolog diode 環形緩衝、由單一 goroutine 寫 stderr，Gate／World 事件迴圈不再為每行付 write syscall（本機 benchmark 約 2.6µs/op → 0.19µs/op）。取捨：緩衝滿了丟最舊日誌，計入 `logger_async_dropped_total` 並在 stderr 寫一行 Warn `async log buffer overflow, entries dropped`；行程崩潰（panic、SIGKILL）時緩衝內最後幾筆可能遺失，正常結束由 `startup.Main` 的 `logger.Close()` 排空；標準庫 `log` 橋接在非同步模式下同步寫 stderr、不經緩衝；值寫錯時記 Warn `LOG_ASYNC_BUFFER invalid, async logging disabled` 並維持同步日誌（細節見[日誌輸出格式](../00-導讀/日誌輸出格式.md#非同步日誌log_async_buffer)）。建議壓測時先在單一服務試開（例如 8192）並觀察 `logger_async_dropped_total`，未決定正式環境是否預設開啟。
+- `compose.prod.yml` 把 `.env.prod` 的下列**選填執行期覆寫變數**轉進六個應用服務的 `environment`（`--env-file` 只用於 compose 內插，沒轉進 `environment` 的變數容器收不到；留空等同未設定）：`LOG_FORMAT`、`LOG_SAMPLE_RATE`、`LOG_ASYNC_BUFFER`、`PPROF_MUTEX_FRACTION`、`PPROF_BLOCK_RATE`。`DATA_CONFIG_VERSION_PATH` 只供非 compose 部署（compose 已把設定掛到預設路徑）。`tools/internal/configaudit` 守門：範本可覆寫段列出的名稱必須出現在每個服務的 `environment`，且 compose 的每個環境變數名稱必須對得上程式讀取者（`os.Getenv`）或某個 viper 鍵轉大寫底線的結果，日後改鍵名（例如 `mysql.username` 改 `mysql.user`）造成覆寫失效會在測試就被抓到。
 - 日誌層級由 `.env.prod` 的 `LOG_LEVEL`（`trace`／`debug`／`info`／`warn`／`error`，預設 `info`）控制，不合法的值讓服務拒絕啟動；設定檔路徑由 compose 的 `APP_CONFIG` 指定，命令列 `-config` 優先於它。
 - 設定以目錄掛載 `docker/prod/config:/config:ro`（每個容器看得到全部服務的設定檔）；單檔 bind mount 在宿主機以改名方式更新設定時會停在舊 inode，熱重載收不到。
 - 正式環境不傳 `FAULT_INJECT`；`go run ./tools/pja configaudit` 會檢查。
@@ -107,7 +108,7 @@ Central 的主機時鐘就是遊戲時間來源（骰子恢復、冷卻、任務
 ### 環境變數：AUTO_MIGRATE_DISABLED
 
 所有 Go 服務在啟動初期會自動執行 `AutoMigrate` 確保資料表結構與 model 一致。
-**生產環境應設 `AUTO_MIGRATE_DISABLED=true`**，由外部 migration 工具（golang-migrate / Flyway / Atlas）管理 schema：
+**生產環境應設 `AUTO_MIGRATE_DISABLED=true`**（接受 `true`／`1`／`yes`／`on`，不分大小寫；寫錯拒絕啟動，不再靜默退回啟用），由外部 migration 工具（golang-migrate / Flyway / Atlas）管理 schema：
 
 ```env
 AUTO_MIGRATE_DISABLED=true
