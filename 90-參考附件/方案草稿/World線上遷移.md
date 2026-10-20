@@ -60,7 +60,7 @@ World 是有狀態節點（記憶體玩家態 + channels）。
 7. **Central → 舊 World 1001：`MigrateComplete`**
    - 1001：清理該玩家（退出 channels、清 Redis player store 殘留）；回 Ack。
    - 作用：**至此舊 World 才放棄該玩家**；此步之前回滾隨時可行。
-8. **收尾**：1002 該玩家正式 active。1001 全部玩家遷完後：優雅關機（`WaitPersist` + `FlushPlayerStates`）→ 部署新版本 → 清空 drain 集合、新版本以原 1001 或新 ID 接回。
+8. **收尾**：1002 該玩家正式 active。1001 全部玩家遷完後：優雅關機（`ClosePersistAndWait` + `FlushPlayerStates`）→ 部署新版本 → 清空 drain 集合、新版本以原 1001 或新 ID 接回。
 
 ## 資料一致性保證
 
