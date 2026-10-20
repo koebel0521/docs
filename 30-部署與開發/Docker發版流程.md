@@ -42,7 +42,7 @@
 
 ### 手動步驟
 
-1. 決定版本號；`go run ./tools/pja releasemanifest generate -release <tag> -commit <SHA>` 依實際產物寫出 `release.json`
+1. 決定版本號；`go run ./tools/pja releasemanifest generate -release <tag> -commit <完整 40 碼 SHA>` 依實際產物寫出 `release.json`
 2. `go run ./tools/pja releasemanifest verify` 驗證 server/config/schema/protocol 對應；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）；`config/data/version.json` 以 `dataconfig.LoadManifest` 載入並驗證（40 字元 SHA、`luban_version`、`config_version` 等必填），`{}` 或缺欄位直接報錯，不再因空檔略過比對；`release.json` 以原子寫入，中斷不留截斷檔
 3. build image
 4. push image
