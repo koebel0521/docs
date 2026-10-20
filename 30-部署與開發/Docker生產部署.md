@@ -237,7 +237,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 確認：
 
 - `mysql` / `redis` healthy
-- `central` / `world` / `gate` healthy
+- `central` / `world` / `gate` healthy（六個服務的 healthcheck 都有 `start_period: 120s`：`/ready` 在啟動完成前回 503，World 還原玩家與重建候選最久約 2 分鐘，期間失敗不計入 `retries`）
 - `chat`、`lobby` 的 `/ready` 通過（`time_sync` 就緒檢查：已收到 Central 第一則 `TimeSync`）
 - 若有開監控，`prometheus` / `grafana` up
 
