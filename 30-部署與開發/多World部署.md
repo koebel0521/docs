@@ -13,7 +13,7 @@ created: 2026-10-16
 2. **每個 World 要有不同的 `id`、監聽位址與 `public_addr`**，並且都連到同一個 Central。
 3. **帳號的 World 是固定的**（`user.world_id`）。World 掛掉時，綁在它上面的玩家無法改派到別的 World（記憶體狀態與寫回都在原 World）；其他 World 的玩家不受影響。
 4. **每個 World 一個獨立的 `game_store.spill_dir`**（關機時寫不進 MySQL 的玩家異動落地目錄），不要共用。
-5. 所有 World 共用同一個 MySQL、Redis 與 RabbitMQ。
+5. 所有 World 共用同一個 MySQL、Redis 與 RabbitMQ。**MySQL 連線預算**：每個 World 最多占 56 條（主池 `mysql.max_open_conns` 40 加載入用多語句池 16），Central、Chat、Record 各 25 條（共 75），另留約 10 條給管理連線與瞬間補建；MySQL 的 `--max-connections`（`compose.full.yml`、`compose.prod.yml` 皆為 300）因此最多容納 3 個 World（`(300 - 75 - 10) / 56` 無條件捨去）。要跑更多 World 先調高 `--max-connections`，否則各池補建連線撞 MySQL Error 1040，斷路器打開後載入與寫回整批失敗。`scripts/world-autoscale.ps1` 擴容前會檢查這份預算，超過就拒絕（見 [World自動擴縮](./scripts/World自動擴縮.md)）
 6. 診斷埠預設依服務類型固定（`pkg/debug/services.go`：World 為 6062）；同一台主機跑第二個 World 時在其設定檔加 `debug.addr`（例如 `":6072"`），否則後啟動的會記錄 `debug server disabled; set debug.addr ...` 錯誤、沒有 `/metrics`、`/ready` 與 pprof（服務照常運作）。
 7. **每個 World 都要加進 Prometheus 抓取目標**：`world` job 只有靜態的 `world:6062`，其餘 World 經 file_sd 讀 `docker/monitoring/targets/world-*.json`（不進版控；`compose.full`／`compose.prod` 把該目錄掛到 `/etc/prometheus/targets`，改檔免重啟 Prometheus）。漏加的 World 沒有指標與告警，自動擴縮也會依偏低的在線數決策。檔案格式為 file_sd 的 JSON，例如 `[{"targets":["world-2:6062"]}]`；`world-autoscale.json` 由擴縮腳本自動維護，手動加的 World 請另開一個 `world-<名稱>.json`。
 

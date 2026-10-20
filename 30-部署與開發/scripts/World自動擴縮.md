@@ -14,6 +14,9 @@
 5. `-Apply` 才真的動作；縮容會停掉 World 容器、中斷其玩家，必須另加 `-AllowScaleDown`，並依 World ID 數字由大到小停。縮容前比對 `count(up{job="world"}==1)` 與實際 World 容器數，不一致（有 World 沒被抓到指標）就中止，不會依偏低的在線數縮容。
 6. 只有 `-Apply`（且非 `-DryRun`）時，才把擴出的 `project-world-N:6062` 寫入 `docker/monitoring/targets/world-autoscale.json`（先寫暫存檔再改名），Prometheus 經 file_sd 自動抓取新 World。
 
+## 連線預算檢查
+算出 desired World 數後，若超過 `floor((MysqlMaxConnections - ConnsOtherServices - ConnsReserve) / ConnsPerWorld)`（預設 300 時為 3 個 World）就直接拋錯拒絕，`-DryRun` 也一樣；World 數超過預算會讓各池補建連線撞 MySQL Error 1040，斷路器打開後載入與寫回整批失敗。要擴更多 World 先調高 `compose.full.yml`／`compose.prod.yml` 的 `--max-connections`，並同步 `-MysqlMaxConnections`。
+
 ## 主要參數
 - `-ComposeFile`
 - `-WorldTemplate`
@@ -22,6 +25,7 @@
 - `-MaxPlayersPerWorld`
 - `-MaxTcpSendQueueDepth`
 - `-MaxAppEventQueueDepth`
+- `-MysqlMaxConnections`（預設 300，須與 compose 的 `--max-connections` 一致）、`-ConnsPerWorld`（預設 56：主池 40 加載入池 16）、`-ConnsOtherServices`（預設 75：Central、Chat、Record 各 25）、`-ConnsReserve`（預設 10）：連線預算，見下方「連線預算檢查」
 - `-Apply`
 - `-AllowScaleDown`
 - `-DryRun`
