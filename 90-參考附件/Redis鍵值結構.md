@@ -26,7 +26,7 @@
 | `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除 | GM 踢人佇列，Gate 用 BLPOP 消費；playerID 解析失敗記 Warn 並計 `game_async_failure_total{queue="kick",outcome="invalid_payload"}` |
 | `gm:version:policy` | String（JSON） | Lobby (admin) → Gate | 永久 | Client 版本政策：維護旗標、線上玩家寬限期與各平台最低／最新遊戲版本；Gate 每 10 秒重新載入，讀取失敗沿用舊值 |
 | `gm:grant_item:{worldID}` | List | Lobby (admin) → World | 消費後移除 | GM 發道具佇列，World 用 BRPopLPUSH 消費 |
-| `gm:grant_item:processing:{worldID}` | List | World | 消費期間 | 處理中指令（BRPOPLPUSH 從佇列移入，處理完移除，避免重複消費） |
+| `gm:grant_item:processing:{worldID}` | List | World | 消費期間 | 處理中指令（BRPOPLPUSH 從佇列移入，處理完移除，避免重複消費）。多 worker 時第 N（N≥1）個 worker 用 `gm:grant_item:processing:{worldID}:{index}`，第 0 個沿用不帶 index 的 key；調降 worker 數後殘留的 `:{index}` 清單要手動檢查，不會自動回收 |
 | `gm:grant_item:retry:{worldID}` | ZSet | World | 重試期間 | 失敗指令重試佇列，按時間排程 |
 | `gm:grant_item:capability:{worldID}` | String | World | 永久（on/off） | World 是否支援 GM 發道具 |
 | `gm:grant_item:deadletter:{worldID}` | List | World | 7 天（`grantitem.DeadLetterTTL`） | 超過重試次數的死信佇列 |
@@ -48,7 +48,14 @@
 | `central:account:{account}` | Hash | Central | 7 天（`AccountCacheTTL`） | 帳號快取：欄位 `uid`、`wid`、`hash`（passwordHash） |
 | `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token。登入取鎖後以 `LoginAccountLockHold`（`redisLockTTL` 減 5 秒）作為處理期限，逾時即中止，不讓鎖在流程中途過期 |
 | `central:world:drain` | Set | Lobby (admin) | 排空期間 | 排空中的 World ID 集合 |
-| `central:audit:record:{playerID}` | String | Central | 10 分鐘（`auditRecordCacheTTL`） | audit 快取記錄 |
+| `central:audit:record:{playerID}` | Hash | Central | 10 分鐘（`auditRecordCacheTTL`） | audit 快取記錄：欄位 `account`、`worldID`、`hash`（passwordHash）；用 `HGETALL` 查，`GET` 會得到 WRONGTYPE |
+
+## `combat:*` — PvP 候選索引（combatstore）
+
+| Key 模式 | 類型 | Owner | TTL | 用途 |
+|----------|------|-------|-----|------|
+| `combat:eligible-player` | Set | World（所有 World 共用） | 無 | 可配對玩家 ID 候選集合；Redis 重啟或 `FLUSHALL` 後由玩家操作時重寫補回，或重啟 World 觸發重建 |
+| `combat:eligible-player:rebuild:{nanoBase36}` | Set | World | 1 小時 | 重建時先寫入的專屬暫存 key，完成後以 Lua 原子換上正式集合；正常不會殘留，崩潰時殘留靠 TTL 自行清除 |
 
 ## `requestjournal:*` — 請求去重快取
 
