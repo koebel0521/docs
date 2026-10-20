@@ -13,6 +13,8 @@
 4. 用 `busybox` 把 tar.gz 解到 volume 內的暫存目錄，舊資料移到 `.restore-old` 後才換入新資料。
 5. 再把 Redis 起回來。
 
+解壓失敗時（尚未建立 `.restore-old`）會清掉暫存目錄、舊資料原封不動留在 volume 根目錄，Redis 維持停止；換入途中失敗才需要從 `.restore-old` 取回舊資料，不再留下空的 `.restore-old`。
+
 volume 內已有上次失敗留下的 `.restore-old` 時腳本會拒絕繼續，那可能是唯一的舊資料，請先確認再手動處理。
 
 ## 主要參數
