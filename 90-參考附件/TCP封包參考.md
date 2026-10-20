@@ -228,6 +228,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
    - `Accept` 回 `net.ErrClosed` 或 owner 已關閉時結束；其他錯誤（EMFILE、ECONNABORTED 等）以 5ms 起加倍、上限 1 秒退避後重試
    - `admitConn`：先檢查來源 IP 限流（`ratelimit.IPLimiter`；表滿時淘汰最久未見的來源，不拒絕新來源），再取 `connSem` 槽位（`MaxConns`）；被拒直接關閉
    - 並發上限 `connSem`（`MaxConns`，未設定為 10000）滿時直接拒絕，不阻塞 accept loop
+   - 迴圈本體 panic 時（`recoverAcceptLoop`）：以 `appcore.RecoveredError` 記 `tcpserver accept loop`（`game_panic_recovered_total{msg="tcpserver accept loop"}`），把原因存入 `listenErr` 並關閉 listener。若只靠 `Async` 的 recover 吞掉，listener 沒關、`/ready` 仍回就緒，核心照常完成 TCP 握手卻沒人 `Accept`，玩家連得上卻永遠沒有回應
 4. `handleConn`：有 `AcceptHandshake[name]` 時先做 S2S 驗證，取得已驗證的節點 ID；失敗記 Warn 後關閉
 5. `OwnerBase.ServeConn(conn, id)`：建 socket、`id != 0` 時先 `SetID`、加入 `Sockets`、`Start()`（真實 `Socket` 只啟動送出迴圈；測試替身沿用收送兩個 goroutine）、`Connect` 回呼、由 `ServeConn` 自己的 goroutine 直接跑接收迴圈（每條連線少一個只在 `Wait` 阻塞的 goroutine，約 2 個／連線，原為 3 個）再 `Wait()` 送出迴圈結束、`Disconnect` 回呼並從 `Sockets` 移除
 6. `Close()`：`CloseRuntime` 標記關閉、關閉所有 socket 與 listener，等待所有 goroutine 結束
