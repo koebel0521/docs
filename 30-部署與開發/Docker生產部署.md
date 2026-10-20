@@ -170,7 +170,7 @@ DROP INDEX idx_record_outbox_event_player_id ON record_outbox_event;
 |------|-------------|-------------|----------------|----------------|---------|
 | Central、Chat、World、Record（全部） | 25（`mysql.max_open_conns`） | 10（`mysql.max_idle_conns`） | 1h | 10m | 各服務經 `dbstartup.MySQLConfig` 讀設定檔的 `mysql.max_open_conns`／`mysql.max_idle_conns`，交給 `pkg/mysql`（Central、Chat、World 走 `mysql.Open`，Record 走 `mysql.ConnectWithContext`） |
 
-> `max_open_conns`／`max_idle_conns` 設 0 或負數時用預設值；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。服務連線另把 session 的 `innodb_lock_wait_timeout` 設為 10 秒（MySQL 預設 50 秒），對齊最長的請求期限：客戶端 ctx 逾時只關 TCP，伺服器端等鎖的語句會等到這個上限才回滾，等鎖超過時回 Error 1205（不觸發斷路器）。維運工具經 `mysql.OpenDSN` 開的連線不套用這個上限。
+> `max_open_conns`／`max_idle_conns` 設 0 或負數時用預設值；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。服務連線另把 session 的 `innodb_lock_wait_timeout` 設為 10 秒（MySQL 預設 50 秒），對齊最長的請求期限：客戶端 ctx 逾時只關 TCP，伺服器端等鎖的語句會等到這個上限才回滾，等鎖超過時回 Error 1205（不觸發斷路器）。經 `mysql.OpenDSN` 開的連線同樣套用這個上限（`applyLockWaitAndDialTimeout`）。
 
 ## 2. 建 image
 
