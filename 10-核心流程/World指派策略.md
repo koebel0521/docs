@@ -7,13 +7,17 @@
 Central 在處理 `LoginGateToCentral` 時，根據玩家是否已有帳號記錄採取不同策略：
 
 - **既有玩家**（DB 有記錄）：沿用資料庫中的 `WorldID`，不重新指派。
-- **新玩家**（DB 無記錄）：透過 `worldAssigner` 介面選擇 World。
+- **新玩家**（DB 無記錄）：由 `selectNewUserWorld`（`cmd/central/internal/flow/login/route.go`）選擇 World：先看 canary 流量切片，沒命中再依負載選擇。
 
 ## 指派演算法
 
-### 最少負載優先（leastLoadedWorldAssigner）
+### Canary 流量切片
 
-這是目前的預設策略：選擇邏輯在 `cmd/central/internal/app/world_registry.go` 的 `App.LeastLoadedWorldID`，由登入流程 `cmd/central/internal/flow/login/route.go` 呼叫。
+`traffic_slice_percent`（0 停用）與 canary World 由 `App.SetTrafficSlice(percent, worldID)` 設定（啟動與熱重載都經 `cmd/central/traffic_slice_config.go`）。`App.TrafficSliceWorldID(account)` 以帳號的 FNV-1a 雜湊對 100 取餘數，小於 `percent` 的新帳號導向 canary World；canary World 也必須可選（未排空、不在重連冷卻、socket 存在），否則退回下面的最少負載選擇。只影響新玩家，既有玩家仍回資料庫記錄的 World。
+
+### 最少負載優先
+
+沒有命中流量切片時使用的預設策略：選擇邏輯在 `cmd/central/internal/app/world_registry.go` 的 `App.LeastLoadedWorldID`，由登入流程 `cmd/central/internal/flow/login/route.go` 呼叫。
 
 流程：
 
@@ -67,7 +71,7 @@ LeastLoadedWorldID()
 
 | 需求 | 可能做法 |
 |------|---------|
-| World 容量上限 | `worldAssigner` 中加入 `maxPlayers` 檢查，滿員時跳過 |
+| World 容量上限 | `LeastLoadedWorldID` 中加入 `maxPlayers` 檢查，滿員時跳過 |
 | 加權指派 | World 定期回報 CPU/記憶體負載，Central 綜合考量 |
 | 玩家遷移 | 新增 `MigrateUserToWorld` 訊息，支援線上搬移 |
 | 多 Central 一致性 | 透過 Redis 共享各 World 的即時玩家數 |
