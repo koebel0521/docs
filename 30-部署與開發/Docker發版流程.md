@@ -222,7 +222,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 2. 停止六個服務（整批替換，不跨發版混跑），**停服後再備份一次 MySQL**（檔名帶 `-final` 後綴，例如 `mysql-20261020-120000-final.sql.gz`）：World 關機時會整批寫回玩家異動，關服前的備份不含這段，migration 損壞資料時要以停服後的最終狀態為還原點。這次備份落在維護窗口內，維護時間因此多出一次 `mysqldump` 的時間（資料量大時需留意 `deploy-production` 的 30 分鐘 job timeout）。
 3. 發布 `config/data` 設定 artifact。World 啟動會比對 `current.json` 與映像內的 `release.json`，兩者必須同批更新，因此設定隨發版自動發布。
 4. 執行 DB migration，把 `.env.prod` 的映像更新為 `images.env` 的 digest（沒有該檔時用 tag），啟動並等待六個服務 healthy（上限 `HEALTH_TIMEOUT` 秒，預設 180；必須是正整數秒，寫成 `3m` 這類時長字串會在任何停服動作之前以結束碼 2 中止，不會讓健康檢查與回滾被跳過而假成功）。維護結束後，若 `monitoring` profile 有在跑，會以 `--force-recreate --no-deps` 重建 `prometheus` 與 `alertmanager`：告警規則與 Alertmanager 設定是單檔 bind mount，換版後容器仍指向舊 inode，不重建就不會載入新規則。重建失敗只印 `WARN`（規則可能是舊的），不回滾已成功的應用部署。
-5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。維護中（服務已停、尚未成功）收到 TERM／INT（job 逾時或手動取消）也同樣自動回滾，不會把服務停在關閉狀態；腳本因 INT 中斷以 130、因 TERM 中斷以 143 結束。`deploy-production` 的 job timeout 仍是 30 分鐘。
+5. 任一步失敗：映像（原樣還原部署前 `.env.prod` 的映像值）與設定 artifact 退回上一版，資料庫不還原。維護中（服務已停、尚未成功）收到 TERM／INT（job 逾時或手動取消）也同樣自動回滾，不會把服務停在關閉狀態；腳本因 INT 中斷以 130、因 TERM 中斷以 143 結束。回滾時設定 artifact 切回失敗不再被吞掉：印 `!!` 提示、回滾以非 0 結束，外層印 `ROLLBACK FAILED`（第十一輪；原本健康檢查通過仍印 rollback done）。缺 `IMAGE_TAG`、`REGISTRY` 等必填參數時印用法並以 2 結束。`deploy-production` 的 job timeout 仍是 30 分鐘。
 
 自動發布只處理一般設定變更。拓樸或變數 migration（需 `-topology-migration`、`-variable-migration` 與離線搬遷）仍須依 [配置Artifact發布與回退](配置Artifact發布與回退.md) 手動處理，自動發布遇到會失敗並回退。
 
