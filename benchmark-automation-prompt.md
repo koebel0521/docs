@@ -10,7 +10,7 @@
 2. 選擇能代表實際生產工作量的不同情境，新增最小必要的 benchmark。不得只改名稱、資料大小或參數，重複既有情境。
 3. 遵守專案格式規範，執行相關 benchmark，使用適當的 `go test -bench`、`-benchmem` 等選項，確認成功並記錄有效結果。
 4. 根據數據使用 CPU 或記憶體 profile 找出主要成本，實作最小且有證據支持的效能調整。不要只憑猜測微優化。
-5. 以相同機器、Go 版本、benchmark 與參數重跑，重複比較修改前後的 `ns/op`、`B/op`、`allocs/op`。確認結果正確且改善可重複，才保留調整；若無改善、結果不穩定或找不到明確瓶頸，撤回本輪效能調整，但保留有價值的 benchmark，並如實回報。
+5. 以相同機器、Go 版本、benchmark 與參數重跑：修改前與修改後各以 `-count=10`（耗時至少 `-count=6`）量測，並用 `go tool -modfile=tools/gotools/go.mod benchstat` 比較 `ns/op`、`B/op`、`allocs/op`；benchstat 顯示 `~`（無顯著差異）時不得宣稱改善、也不保留該修改。確認結果正確且改善可重複，才保留調整；若無改善、結果不穩定或找不到明確瓶頸，撤回本輪效能調整，但保留有價值的 benchmark，並如實回報。
 6. 檢查本輪 diff 與 `git diff --check`，確認只含本輪必要的 benchmark 與經驗證的效能調整；不可新增一般單元測試。Benchmark 如需驗證輸出，只加入必要檢查。
 7. 以中文 Conventional Commit 建立一個 commit，且每輪恰好一個 commit；同一 commit 包含本輪 benchmark 與保留的效能調整。
 8. 推送該 commit 至目前分支的對應遠端分支。
@@ -18,7 +18,7 @@
 
 執行限制：
 - 不要重複盤點整個專案或 CI。只檢查足以判斷 benchmark 是否重複，以及 pipeline 是否會執行該 benchmark 的相關範圍。
-- 若 pipeline 不會執行新增 benchmark，明確記錄此事，不要擴大修改範圍去調整 CI。
+- 新 benchmark 所在的套件必須同步加入 `bench/packages.txt`（lint job 的 `scripts/ci-bench-pkgs-check.sh` 要求有 Benchmark 的目錄一定列入清單，否則 lint 失敗）；除此之外若 pipeline 仍不會執行新增 benchmark，明確記錄此事，不要擴大修改範圍去調整 CI。慣例見 `docs/30-部署與開發/開發規則.md` 的「Benchmark 與 PGO」段。
 - 若找不到有價值且尚未覆蓋的情境，立即停止；不要為了達到 N 次製造變更。回報已完成次數與停止原因。
 - 只有同一情境、相同環境與參數下取得可重複的前後比較，才能宣稱效能改善；分別回報 `ns/op`、`B/op`、`allocs/op` 的變化。
 - 保留工作區既有變更，只 stage 本輪新增或修改的必要檔案；不得把其他人的變更帶進 commit。
