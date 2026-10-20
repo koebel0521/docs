@@ -121,7 +121,7 @@ AUTO_MIGRATE_DISABLED=true
 
 關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。
 
-Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表且寫入會失敗。正式 compose 因此只對 Record 設 `AUTO_MIGRATE_DISABLED=false`。Record 只**補建不存在的**事件分表（啟動時預建最近 31 天與明天，每小時檢查一次，每張建表另有 30 秒期限），既有分表不再跑 `AutoMigrate`：模型改了也不會自動 ALTER 正式庫的大表，既有分表的結構變更一律走 PJA-Database plan（行為變更）。
+Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表，寫入前改查該日分表是否存在：存在（外部工具已預建）就放行並記入快取，之後不再查；不存在才回暫時性錯誤（`record table ... does not exist and AUTO_MIGRATE_DISABLED=true`），消費端退避重試，外部工具建好後自動恢復，不會直接進死信。正式 compose 預設仍只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，由 Record 自己補建。Record 只**補建不存在的**事件分表（啟動時預建最近 31 天與明天，每小時檢查一次，每張建表另有 30 秒期限），既有分表不再跑 `AutoMigrate`：模型改了也不會自動 ALTER 正式庫的大表，既有分表的結構變更一律走 PJA-Database plan（行為變更）。
 
 #### 升級時需手動建立的索引與欄位變更
 
