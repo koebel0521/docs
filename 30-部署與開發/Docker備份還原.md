@@ -27,6 +27,8 @@
 
 - `~/pja-backups/mysql/mysql-YYYYMMDD-HHMMSS.sql.gz`（repo 外；權限 0600、目錄 0700，腳本以 `umask 077` 建立）
 
+只保留最近 `BACKUP_KEEP` 份（預設 20，`0` 表示不清理）；備份與正式資料同機，不輪替會慢慢寫滿磁碟，需要更長保存或異地備份請自行複製。CD 部署（[Docker發版流程](Docker發版流程.md)）會在服務停止後多備份一份，檔名帶 `-final`（`TIMESTAMP` 後綴），也算在保留份數內。
+
 可覆寫：
 
 ```bash
@@ -61,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 
 - `~/pja-backups/redis/redis-YYYYMMDD-HHMMSS.tar.gz`（repo 外；權限 0600）
 
-這份 tar 會包含 Redis volume 內的資料檔。
+這份 tar 會包含 Redis volume 內的資料檔。同樣只保留最近 `BACKUP_KEEP` 份（預設 20，`0` 表示不清理）。
 
 ## Redis 還原
 
