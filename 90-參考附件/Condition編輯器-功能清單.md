@@ -115,7 +115,7 @@
 
 | 專案 | 內容 |
 |---|---|
-| PJA-Server | `internal/gamecore/condition`：支援 Type 4 引用，載入時把被引用條件內嵌展開；循環、不存在、非根節點引用會讓載入失敗；`LoadDefinitionsForIDs` 連帶載入被引用的條件；新增 6 個測試（`4eddd4422`，**尚未推送、未部署**） |
+| PJA-Server | `internal/gamecore/condition`：支援 Type 4 引用，載入時把被引用條件內嵌展開；循環、不存在、非根節點引用會讓載入失敗；`LoadDefinitionsForIDs` 連帶載入被引用的條件；新增 6 個測試（`4eddd4422`，已在 `origin/develop`；是否已部署到正式環境以發版紀錄為準） |
 | PJA-Config | `Condition.xlsx` 的「Type」說明分頁補上 Type 4 與 `#Name／#Note／#Tags` 說明；README 補上條件編輯器說明（`a304fd3`、`d528aca`） |
 | PJA-Docs | `名詞定義.md` 新增 `ConditionRef`（`7f81026`，在 `docs/condition-ref` 分支） |
 
@@ -141,7 +141,7 @@
 | 項目 | 說明 |
 |---|---|
 | Mission 條件欄位改成 Luban 引用型別 | 把 `Mission.xlsx` 的 `VisibilityConditionId`、`ActivationConditionId`、`ClaimConditionId` 改成 `int#ref=Shared.ConditionConfigTable?`，Luban 才會擋掉「條件被刪但還有人引用」；會影響 Mission 產出程式碼，要通知程式人員 |
-| PJA-Server Type 4 的合併與部署 | Server 端的提交要先合併、同步，之後正式的 `Condition.xlsx` 才能使用 Type 4；在那之前不要填 |
+| PJA-Server Type 4 的部署 | Server 端提交 `4eddd4422` 已在 `origin/develop`；正式環境部署（發版）完成後，正式的 `Condition.xlsx` 才能使用 Type 4；在那之前不要填 |
 | PJA-Docs 分支 | `docs/condition-ref` 要併回 `main` |
 | 推送 | `ConditionEditor` 的本機 git 專案還沒有遠端 |
 
