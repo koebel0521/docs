@@ -74,7 +74,7 @@ docker compose -f docker/compose/compose.full.yml ps
 - Central gate TCP: `localhost:60002`
 - Central chat／lobby TCP（`60003`／`60004`）只在容器網路內，供 Chat、Lobby 接收 `TimeSync`（遊戲時間），不對宿主機開放；Chat、Lobby 等 Central `healthy` 才啟動，收到第一則 `TimeSync` 前 `/ready` 不就緒
 - World gate TCP: `localhost:61500`（容器內 61001）
-- Record HTTP: `localhost:6070`（查詢需帶 `Authorization: Bearer dev-record-token-local-stack-only`，見 `config/docker/record.yaml`）
+- Record HTTP: `localhost:6070`（查詢需帶 `Authorization: Bearer dev-record-token-local-stack-only`，見 `config/docker/record.yaml`；`-local-stack-only` 結尾的開發 token 綁非 loopback 位址時 Lobby、Record 會拒絕啟動，compose 以 `ALLOW_DEV_TOKENS: "true"` 放行，見[已知安全風險](./已知安全風險.md)第 4 項）
 - RabbitMQ AMQP: `localhost:5672`
 - RabbitMQ UI: [http://localhost:15672](http://localhost:15672)
 - Grafana: [http://localhost:3000](http://localhost:3000)
