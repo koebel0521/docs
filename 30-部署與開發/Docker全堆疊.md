@@ -89,7 +89,7 @@ docker compose -f docker/compose/compose.full.yml ps
 - Record HTTP: `localhost:26070`（同樣需帶 `Authorization: Bearer dev-record-token-local-stack-only`）
 - RabbitMQ AMQP: `localhost:25672`
 - RabbitMQ UI: [http://localhost:25673](http://localhost:25673)
-- Lobby HTTP: `localhost:18080`
+- Lobby HTTP: `localhost:18080`（只綁 `127.0.0.1`；同一個 listener 帶 admin 路由，且 `admin_token` 是版本庫內的公開值，區網實機要連時先換 token 再手動改埠綁定，見[已知安全風險](./已知安全風險.md)第 4 項）
 - Grafana: [http://localhost:13000](http://localhost:13000)
 - Prometheus: [http://localhost:19090](http://localhost:19090)
 
