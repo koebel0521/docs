@@ -29,7 +29,7 @@
 | `gm:grant_item:processing:{worldID}` | List | World | 消費期間 | 處理中指令（BRPOPLPUSH 從佇列移入，處理完移除，避免重複消費） |
 | `gm:grant_item:retry:{worldID}` | ZSet | World | 重試期間 | 失敗指令重試佇列，按時間排程 |
 | `gm:grant_item:capability:{worldID}` | String | World | 永久（on/off） | World 是否支援 GM 發道具 |
-| `gm:grant_item:deadletter:{worldID}` | List | World | 7 天（`GrantItemDeadLetterTTL`） | 超過重試次數的死信佇列 |
+| `gm:grant_item:deadletter:{worldID}` | List | World | 7 天（`grantitem.DeadLetterTTL`） | 超過重試次數的死信佇列 |
 
 佇列中的指令是 `grantitem.Command` 的 JSON，World 以嚴格模式解碼（拒絕未知欄位與尾部資料），無法解碼的指令原文放進死信保留 7 天。`Command` 新增欄位時必須先升級所有 World，再升級寫入佇列的 Lobby；反過來升級時，舊 World 會把新格式的指令全部放進死信，升級 World 與工具後再以 `tools/private/deadletterreplay` 重送（舊版工具同樣無法解碼，會直接報錯）；`tools/private/datasurgeon -mode deadletter` 可列出或清除無法解碼的項目。
 

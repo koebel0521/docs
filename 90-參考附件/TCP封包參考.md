@@ -9,7 +9,7 @@
 | `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceEvent`、`Drainer` 與 `AddMsgHandler`；只有介面，沒有實作 |
 | `pkg/framecodec` | frame 編解碼（`Coder`）與分級緩衝池 |
 | `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流、送出快速路徑）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期） |
-| `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`AcceptPolicy`）、S2S accept 握手 |
+| `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`(*Server).admitConn`）、S2S accept 握手 |
 | `pkg/tcpclient` | `Client`：dial、重連退避、位址輪替、S2S dial 握手 |
 | `pkg/tcpconfig` | `Config`、`ServerOptions`、listen／dial 位址解析（`BuildConfig`、`ListenAddr`、`DialAddrs`） |
 | `pkg/tcpregistry` | `Registry`：登記各服務 owner、依名稱查找、`Drain` 滾動部署 |
@@ -227,7 +227,7 @@ svc := tcpclient.New(name, baseApp, ownerEvent,
 2. `listen()` 監聽成功或失敗後註冊就緒檢查 `tcp_listen_<name>`（經 `WithReadyRegister` 傳入的 `RegisterReadyChecker`）：監聽失敗、尚未監聽或已 `StopAccepting` 時 `/ready` 回 503；監聽失敗時行程不退出
 3. `acceptLoop()`：
    - `Accept` 回 `net.ErrClosed` 或 owner 已關閉時結束；其他錯誤（EMFILE、ECONNABORTED 等）以 5ms 起加倍、上限 1 秒退避後重試
-   - `AcceptPolicy.Check(host, Sockets.Len())`：先檢查來源 IP 限流（`ratelimit.IPLimiter`），再檢查 `MaxConns`；被拒直接關閉
+   - `admitConn`：先檢查來源 IP 限流（`ratelimit.IPLimiter`），再取 `connSem` 槽位（`MaxConns`）；被拒直接關閉
    - 並發上限 `connSem`（`MaxConns`，未設定為 10000）滿時直接拒絕，不阻塞 accept loop
 4. `handleConn`：有 `AcceptHandshake[name]` 時先做 S2S 驗證，取得已驗證的節點 ID；失敗記 Warn 後關閉
 5. `OwnerBase.ServeConn(conn, id)`：建 socket、`id != 0` 時先 `SetID`、加入 `Sockets`、`Start()`（啟動收送兩個 goroutine）、`Connect` 回呼、`Wait()` 到連線結束、`Disconnect` 回呼並從 `Sockets` 移除
