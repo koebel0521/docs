@@ -13,7 +13,7 @@
 | 欄位 | 大小 | 型別 / 位元組序 | 說明 |
 |------|------|-----------------|------|
 | `size` | 4 位元組 | `uint32`，小端序 | 整個封包總長度 = `6 + len(payload)`，含標頭本身 |
-| `msgID` | 2 位元組 | `uint16`，小端序 | 標準 `MessageID`；Client 端來源為 `PJA-Protocol`，S2S 來源為 Server 註冊表 |
+| `msgID` | 2 位元組 | `uint16`，小端序 | 訊息 ID；Client 與 S2S 訊息都由 `PJA-Protocol` 產生（見下方 msgID 說明） |
 | `payload` | `size - 6` 位元組 | 原始位元組 | 訊息內容，通常是結構序列化後的二進位資料 |
 
 > 所有多位元組整數一律使用**小端序**。
@@ -29,17 +29,8 @@
 
 ### msgID（2 位元組）
 
-- 區分訊息種類，例如：
-  - `10001` = 登入請求（User → Gate）
-  - `30102` = S2S 心跳請求（`HeartbeatReq`）
-  - `30103` = S2S 心跳回應（`HeartbeatRes`）
-  - `30403` = S2S 頻道廣播（`ChannelBroadcast`，World → Gate）
-  - `30404` = S2S 頻道成員同步（`ChannelMembershipUpdate`，World → Gate）
-  - `30405` = S2S 頻道成員快照（`ChannelMembershipSnapshot`，World → Gate）
-  - `10101` = Client 心跳請求（`HeartbeatRequest`）
-  - `10102` = Client 心跳回應（`HeartbeatResponse`）
-  - `11151` = 加入聊天房間
-  - …完整清單見 `PJA-Protocol/Datas/__enums__.xlsx`；路由中繼資料見 `PJA-Protocol/Datas/__beans__.xlsx`
+- 區分訊息種類。號段與常用 ID（例如 Client 登入 `LoginRequest = 1001`、心跳 `HeartbeatRequest = 2005`、聊天 `ChatJoin = 2201`、S2S 心跳 `HeartbeatReq = 30102`）見 [TCP封包參考](TCP封包參考.md) 的號段表。
+- 完整清單以 `deps/PJA-Protocol/Datas/protocol.xml` 為準，或查生成碼 `pkg/protocol/wire/Protocol.ProtocolMessageId.go`；Client 與 S2S 訊息都由 PJA-Protocol 產生，沒有另外的 Server 註冊表。
 - 型別為 `uint16`，範圍 `0 ~ 65535`。
 
 ### payload（`size - 6` 位元組）
