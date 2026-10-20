@@ -46,7 +46,7 @@
 |----------|------|-------|-----|------|
 | `central:routing:{playerID}` | Hash | Central | 24 小時（`RoutingTTL`，寫入刷新；登出刪除） | 路由表：欄位 `gate`、`world`、`account` |
 | `central:account:{account}` | Hash | Central | 7 天（`AccountCacheTTL`） | 帳號快取：欄位 `uid`、`wid`、`hash`（passwordHash） |
-| `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token。登入取鎖後以 `LoginAccountLockHold`（`redisLockTTL` 減 5 秒）作為處理期限，逾時即中止，不讓鎖在流程中途過期 |
+| `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token。取鎖的用戶端逾時（`DeadlineExceeded`）不代表 `SET NX PX` 沒在 Redis 執行，鎖可能已以本次 token 寫入卻沒人會解；逾時時會用脫離取消的 ctx 對同一 token 補一次 `Unlock`（比對 token，不會誤刪別人的鎖），同帳號登入不必等滿 15 秒。登入取鎖後以 `LoginAccountLockHold`（`redisLockTTL` 減 5 秒）作為處理期限，逾時即中止，不讓鎖在流程中途過期 |
 | `central:world:drain` | Set | Lobby (admin) | 排空期間 | 排空中的 World ID 集合 |
 | `central:audit:record:{playerID}` | Hash | Central | 10 分鐘（`auditRecordCacheTTL`） | audit 快取記錄：欄位 `account`、`worldID`、`hash`（passwordHash）；用 `HGETALL` 查，`GET` 會得到 WRONGTYPE |
 
