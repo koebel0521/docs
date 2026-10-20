@@ -11,7 +11,7 @@
 | `lobby:world:{worldID}` | Hash | World | 25s（`keyTTL`） | World 地址與容量；World 在載入設定、遷移並啟動服務之後才開始公告 |
 | `lobby:gates`、`lobby:centrals`、`lobby:worlds` | Set | 各服務 | 無 | 各類服務的 ID 索引（`IndexKey`），成員為服務 ID；服務停止時移除 |
 
-Gate、Central、World 每輪公告前先跑 `debug.Server.CheckReady`（`lobbyreporter.WithReady`，涵蓋 `tcp_listen_*`、`redis`、`mysql` 等非 runtime-only 檢查；第十一輪）：不就緒時刪除自己的 key 與索引成員而非續期，恢復後重新公告，只在狀態轉變時記日誌。原本監聽失敗或 accept 迴圈 panic 後仍每 10 秒續期，負載歸零的 Gate 排在 Lobby 清單最前，把新玩家導向連不上的位址。
+Gate、Central、World 每輪公告前先跑 `debug.Server.CheckReady`（`lobbyreporter.WithReady`，涵蓋 `tcp_listen_*`、`redis`、`mysql` 等非 runtime-only 檢查；第十一輪）：不就緒時刪除自己的 key 與索引成員而非續期，恢復後重新公告，只在狀態轉變時記日誌（Warn／Info）。Redis、MySQL 或 `data_config` 檢查短暫失敗時，該實例也會暫時從 Lobby 清單消失。原本監聽失敗或 accept 迴圈 panic 後仍每 10 秒續期，負載歸零的 Gate 排在 Lobby 清單最前，把新玩家導向連不上的位址。
 
 ## `player:*` / `world:*` — 玩家狀態（playerstoreredis）
 
