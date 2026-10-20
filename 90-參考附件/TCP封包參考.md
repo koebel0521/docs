@@ -176,12 +176,13 @@ tcpruntime.AddMsgHandler(svc, system.NewHelloRequest, r.onHelloRequest)
 ```go
 svc := tcpserver.New(name, baseApp, ownerHandler,
 	tcpserver.WithConfig(tcpCfg),
-	tcpserver.WithWriteDeadTime(tcpsocket.PlayerWriteDeadline),
+	tcpserver.WithWriteTimeout(tcpsocket.PlayerWriteTimeout),
 	tcpserver.WithMaxFrameSize(gateUserMaxFrameSize),
 	tcpserver.WithSocketOptions(
 		tcpsocket.WithRateLimit(rate.Limit(gateUserRatePerSec), gateUserRateBurst),
 		tcpsocket.WithUntrustedPeer(),
 		tcpsocket.WithSendQueueDepth(gateUserSendQueueDepth),
+		tcpsocket.WithReadBufferSize(gateUserReadBufferSize),
 	),
 )
 registry.Register(svc)
@@ -192,8 +193,8 @@ go svc.Start()
 
 | 選項 | 作用 |
 |------|------|
-| `WithConfig(tcpCfg)` | 讀寫逾時設為 `tcpsocket.ServerDeadline`，並套用 `tcpCfg` 的 `ServerOptions` 與位址解析 |
-| `WithReadDeadTime`／`WithWriteDeadTime` | 只接受正值；未設定預設 30 秒 |
+| `WithConfig(tcpCfg)` | 讀寫逾時設為 `tcpsocket.ServerIOTimeout`，並套用 `tcpCfg` 的 `ServerOptions` 與位址解析 |
+| `WithReadTimeout`／`WithWriteTimeout` | 只接受正值；未設定預設 30 秒 |
 | `withServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
 | `WithTCPConfig(cfg)` | 只設定位址解析與握手 |
 | `WithSocketOptions(...)` | socket 層選項（型別為 `tcpsocket.Option`） |
@@ -207,7 +208,7 @@ socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即�
 ```go
 svc := tcpclient.New(name, baseApp, ownerHandler,
 	tcpclient.WithTCPConfig(tcpCfg),
-	tcpclient.WithReadDeadTime(...), tcpclient.WithWriteDeadTime(...))
+	tcpclient.WithReadTimeout(...), tcpclient.WithWriteTimeout(...))
 ```
 
 ### 設定與位址
@@ -216,7 +217,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 
 - listen：`<appID>.listen.<service>.ip`（`host:port`），`ParseListenAddr` 解析為 IPv4 TCP 位址
 - dial：`<appID>.dial.<service>` 底下每個項目的 `ip`（`host:port` 字串），`ParseDialAddrs` 只檢查格式與埠號後排序去重，不做 DNS 解析；部分項目無效時略過，全部無效才回錯
-- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、根層 `max_connections`（正式鍵，0 不限制；`tcp.max_connections` 為已棄用別名，有設定時仍優先並記 Warn）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ParseServerOptions`）
+- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、根層 `max_connections`（正式鍵，0 不限制；`tcp.max_connections` 為已棄用別名，有設定時仍優先並記 Warn）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ServerOptionsWithDefaults`；非正值靜默保留預設值，不回錯）
 
 ## 連線生命週期
 
@@ -275,31 +276,35 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 | eventCh 已滿 | 關閉連線 | 阻塞等待（背壓）直到送入或連線結束 |
 | 解碼錯誤日誌 | Warn | Error |
 
-eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
+eventCh 滿時兩者都計 `game_event_queue_overflow_total`，以 `action` 標籤區分：玩家連線被關為 `closed`，S2S 阻塞等待後送入為 `backpressure`（第十一輪；`GameQueueOverflow` page 只看 `closed`，背壓另由 warning `GameEventQueueBackpressure` 持續 5 分鐘才響）。
 
 ### 送出與廣播
 
 - `Socket.SendMsg`：非阻塞送入 `sendCh`；佇列已達深度（`WithSendQueueDepth` 或 `DefaultSocketSendQueueDepth`）代表對端長時間不讀，直接關閉連線並計 `tcp_send_queue_overflow_total`。Gate 玩家連線深度 1024
 - sendLoop 單一 goroutine 依序寫入 `bufio.Writer`（4KB），佇列空了才 `Flush`，連續訊息合併成一次寫入
 - `OwnerBase.SendAll(msg)`：直接呼叫非阻塞的 `Sockets.SendAll`，沒有 owner 佇列與轉送 goroutine（舊的 owner 廣播佇列已移除）；owner 已關閉則歸還 msg 並略過。`Sockets.SendAll` 只 `Pack` 一次，包成引用計數的 `packedMsg` 分送給快照中的每個 socket
-- `OwnerBase.Async(f)`：在 owner 的 WaitGroup 下開 goroutine，`Close` 會等它結束
+- `OwnerBase.Async(f)`：在 owner 的 `TaskGroup`（`OwnerBase.Tasks()`，第十一輪由 `WaitGroup()` 改名）下開 goroutine，`Close` 會等它結束
 
-## Deadline
+## 逾時（Timeout）
 
 | 常數 | 值 | 用途 |
 |------|----|------|
-| `tcpsocket.ServerDeadline` | `3 * appcore.HeartbeatInterval`（180 秒） | `tcpserver.WithConfig` 的服務間連線與 Gate 玩家連線讀寫逾時 |
-| `tcpsocket.PlayerWriteDeadline` | 30 秒 | Gate 寫給玩家連線的逾時 |
-| `tcpsocket.UserDeadline` | 2 分鐘 | user 服務（模擬玩家）連往 Gate 的讀寫逾時 |
+| `tcpsocket.ServerIOTimeout` | `3 * appcore.HeartbeatInterval`（180 秒） | `tcpserver.WithConfig` 的服務間連線與 Gate 玩家連線讀寫逾時 |
+| `tcpsocket.PlayerWriteTimeout` | 30 秒 | Gate 寫給玩家連線的逾時 |
+| `tcpsocket.UserIOTimeout` | 2 分鐘 | user 服務（模擬玩家）連往 Gate 的讀寫逾時 |
 | `tcpserver` 預設 | 30 秒 | 未指定讀寫逾時的 server |
 | `tcpclient` 的 `defaultDialTimeout` | 10 秒 | 預設 `dial` 函式（`net.Dialer`） |
 | `s2sauth` 握手 | 5 秒 | TLS 與身份 frame 完成前的整體 deadline，完成後清除 |
+
+命名依 Go 慣例：`Timeout` 指時間長度、`Deadline` 指絕對時間點（第十一輪把 `ServerDeadline`、`PlayerWriteDeadline`、`UserDeadline`、`WithReadDeadTime`／`WithWriteDeadTime`、`OwnerBaseConfig.ReadDeadTime`／`WriteDeadTime` 統一改為 `*Timeout`）。
+
+讀緩衝：`tcpsocket.WithReadBufferSize` 設定單一 socket 的 `bufio.Reader` 大小（預設 8KB）。Gate 玩家連線設 2KB（`gateUserReadBufferSize`；玩家訊息聊天上限 1KB、帳密各 128B），每條連線少 6KB 常駐記憶體；S2S 維持 8KB。大於緩衝的 frame 由 bufio 直接讀進池緩衝，不受影響。
 
 讀寫 deadline 都有節流：距上次設定未超過逾時的 1/4 時不重設，避免每則訊息一次 `time.Now()`。逾時 0 代表不設 deadline。
 
 ## 心跳
 
-- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `s2shandshake.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq()`；對端以 `system.HandleHeartbeatReq`（`pkg/msg/system`）回 `HeartbeatRes`，發起端用 `s2shandshake.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerDeadline`）收不到任何資料就讀取逾時斷線
+- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `s2shandshake.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq()`；對端以 `system.HandleHeartbeatReq`（`pkg/msg/system`）回 `HeartbeatRes`，發起端用 `s2shandshake.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerIOTimeout`）收不到任何資料就讀取逾時斷線
 - 玩家：Client 送 `HeartbeatRequest`（2005），Gate `onHeartbeatReq` 回 `HeartbeatResponse`；已登入的連線才刷新最後心跳時間。Gate 每 5 秒（`userConnCheckInterval`）掃描，超過 `userHeartbeatTimeout = 90s` 沒心跳即斷線（逾時偵測上限約 95 秒）（`game_heartbeat_timeout_total{service="gate_user"}`）；建立連線後 30 秒（`userLoginHandshakeTimeout`）內未完成登入也斷線
 
 ## ConnectInfo 與 ServiceHello
