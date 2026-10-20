@@ -126,11 +126,31 @@ Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分�
 
 #### 升級時需手動建立的索引與欄位變更
 
-`AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列 2026-10 新增的結構需在升級前由外部 migration 建立（PJA-Database 尚無 plan，暫以 SQL 手動執行）：
+`AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列結構變更需在升級前由外部 migration 建立（PJA-Database 尚無 plan，`deps/PJA-Database/migrations/` 只有 README，暫以 SQL 手動執行）。
+
+基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：新表（`player_gold_adjustment` 等，缺表時 `requireTables` 會直接讓啟動失敗）、2026-10-05 `bd968ff43` 起整數欄位由無號改有號、戰鬥相關表（`combat_*`、`wallet_ledger`）的重新設計。
 
 ```sql
 -- Chat：歷史保留清理依 created_at 掃描
 CREATE INDEX idx_chat_message_created_at ON chat_message (created_at);
+
+-- Chat：ChatSync 補送以 room_id = ? AND message_id > ? ORDER BY message_id 查詢（2a88b1674，2026-10-07）。
+-- 舊索引 (room_id, sender_player_id) 只有 AutoMigrate 路徑（cmd/chat/internal/store/mysql/migrate.go）會刪，缺索引 Warn 也不會提到多餘的索引，手動升級要自己刪。
+CREATE INDEX idx_chat_message_room_id_message_id ON chat_message (room_id, message_id);
+DROP INDEX idx_chat_message_room_message ON chat_message;
+
+-- World：寫回重試去重以 (player_id, seed) 鎖定讀抽獎紀錄（cbd65fa66，2026-10-07）
+CREATE INDEX ix_player_lottery_draw_player_seed ON player_lottery_draw (player_id, seed);
+
+-- Central：user 主鍵欄位 user_id 改名為 player_id（c93cf2a7f，2026-10-03；MySQL 8.0 起支援 RENAME COLUMN，主鍵隨欄位保留）。
+-- 必須在新版 Central 以 AutoMigrate 啟動前執行，AutoMigrate 不會改名，只會嘗試另外新增 player_id 欄位。
+ALTER TABLE `user` RENAME COLUMN user_id TO player_id;
+
+-- World：一次停在戰鬥格只能開始一場戰鬥（30f2fe264，2026-10-07）
+ALTER TABLE player_board_state ADD COLUMN combat_pending boolean NOT NULL DEFAULT false;
+
+-- World：自動啟用任務本輪可開始時間（f4a37f853，2026-10-02）
+ALTER TABLE player_mission_state ADD COLUMN eligible_at datetime(3) NULL;
 
 -- World：combat_session 依玩家、狀態與到期時間查詢；status 需先改成 varchar(32) 才能建索引
 ALTER TABLE combat_session MODIFY status varchar(32) NOT NULL;
