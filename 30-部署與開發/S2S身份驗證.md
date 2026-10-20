@@ -241,15 +241,15 @@ Windows 原生排程預設只輸出 XML，供檢閱；加 `-Install` 才註冊�
 ./scripts/check-s2s-dev-secrets.ps1
 python -B scripts/check-s2s-distribution.py --source C:/private/test-s2s
 python -B scripts/check-s2s-maintenance.py
-./scripts/private/check-s2s-docker.ps1
+./scripts/private/check-s2s-docker.ps1  # 私有腳本，不進版控，只在維護者本機
 ```
 
-分發檢查需要以開發產生器建立含 Gate 2001、World 1001 的隔離來源。維護檢查自行建立與刪除暫存機密，驗證有效授權輪替、撤銷不復活、續期簽章及分發失敗重試。完整 Docker 檢查建立專用 Compose 專案，啟動 12 個服務、不發布主機端口；確認四條 S2S、跨目的 token 拒絕、重複身份拒絕、單目的輪替重連及撤銷。預設結束關閉專用容器，保留測試資料卷與暫存機密供查核；此腳本會修改指定的來源，不能指向正式目錄。
+分發檢查需要以開發產生器建立含 Gate 2001、World 1001 的隔離來源。維護檢查自行建立與刪除暫存機密，驗證有效授權輪替、撤銷不復活、續期簽章及分發失敗重試。完整 Docker 檢查建立專用 Compose 專案，啟動 12 個服務、不發布主機端口；確認六條 S2S、跨目的 token 拒絕、重複身份拒絕、單目的輪替重連及撤銷。預設結束關閉專用容器，保留測試資料卷與暫存機密供查核；此腳本會修改指定的來源，不能指向正式目錄。
 
 2026-09-26 已通過完整 Docker 驗收、換發憑證後的實際 TLS 握手、SSH 容器分發與本機維護檢查。Windows 排程 XML 已成功輸出，尚未安裝／觸發正式主機排程。
 
 ## 部署範圍
 
-本次已納入上述四條 TCP S2S；玩家→Gate 維持原有玩家驗證，HTTP、Redis、MySQL、RabbitMQ 使用各自既有的驗證機制。
+本次已納入上述六條 TCP S2S；玩家→Gate 維持原有玩家驗證，HTTP、Redis、MySQL、RabbitMQ 使用各自既有的驗證機制。
 
 本機／Docker 不需要 Google Cloud。通用 ID 分配、SSH 分發、token 輪替、憑證續期與排程配置已提供。依目前決定，GCP 資源、Secret Manager／IAM／VPC 防火牆及實際通知目的地暫不建立；worktree 分支不合併。此方案的排他仍以接收端程序為範圍，多程序共享租約未納入。

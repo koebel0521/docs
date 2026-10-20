@@ -61,7 +61,7 @@
 ./scripts/docker-release.sh 1.0.0 registry.example.com/project
 ```
 
-或直接走統一入口：
+或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrelease -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project
@@ -80,7 +80,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 3. 執行 [docker-build-images.sh](../../scripts/docker-build-images.sh)
 4. 執行 [docker-push-images.sh](../../scripts/docker-push-images.sh)
 
-若只想分開跑，也可以直接走統一入口：
+若只想分開跑，也可以直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerbuild -DockerReleaseImageTag 1.0.0 -DockerReleaseRegistry registry.example.com/project

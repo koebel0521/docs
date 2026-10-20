@@ -20,7 +20,7 @@
 ./scripts/docker-deps-up.sh
 ```
 
-或直接走統一入口：
+或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerdepsup

@@ -37,7 +37,7 @@ World 會從容器內的 `config/data` 載入棋盤與效果資料；`compose.fu
 ./scripts/docker-full-up.sh
 ```
 
-或直接走統一入口：
+或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerfullup

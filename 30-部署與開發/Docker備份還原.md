@@ -41,10 +41,10 @@ ENV_FILE=.env.prod BACKUP_DIR=/srv/backups/mysql ./scripts/docker-backup-mysql.s
 CONFIRM_RESTORE=yes ./scripts/docker-restore-mysql.sh ~/pja-backups/mysql/mysql-20260324-120000.sql.gz
 ```
 
-或直接走統一入口：
+或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrestoremysql -DockerRestoreMysqlInputFile backups/mysql/mysql-20260324-120000.sql.gz
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrestoremysql -DockerRestoreMysqlInputFile ~/pja-backups/mysql/mysql-20260324-120000.sql.gz
 ```
 
 注意：
@@ -71,10 +71,10 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 CONFIRM_RESTORE=yes ./scripts/docker-restore-redis.sh ~/pja-backups/redis/redis-20260324-120000.tar.gz
 ```
 
-或直接走統一入口：
+或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrestoreredis -DockerRestoreRedisInputFile backups/redis/redis-20260324-120000.tar.gz
+powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerrestoreredis -DockerRestoreRedisInputFile ~/pja-backups/redis/redis-20260324-120000.tar.gz
 ```
 
 注意：
@@ -100,7 +100,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 
 database schema 的向前遷移是 release manifest 的一部分。舊版 server rollback 應保持新 schema 相容；需要測試歷史版本時，請使用 production snapshot 的隔離副本。
 
-若只想先把兩份備份打出來，也可以直接走統一入口：
+若只想先把兩份備份打出來，也可以直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -Mode dockerbackup
