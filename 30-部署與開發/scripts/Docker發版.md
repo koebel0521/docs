@@ -9,9 +9,12 @@
 ## 流程
 1. 檢查 upgrade window lock。
 2. 檢查 change approval stamp。
-3. 以 `go run ./tools/pja releasemanifest generate`／`verify`（傳入完整 `HEAD` SHA）產生並驗證 `pkg/release/release.json`（結束後還原開發版）。
-4. 跑 `docker-build-images.sh` 與 `docker-push-images.sh`。
-5. 寫 release trace 檔與 `.run/release/<tag>.release.json`。
+3. 工作樹有未提交修改（含未追蹤檔，`pkg/release/release.json` 除外）就拒絕發版：映像以工作樹（`COPY . .`）建置，但 `release.json` 與 trace 記的是 `HEAD`，內容會對不上 `server_commit`。
+4. 以 `go run ./tools/pja releasemanifest generate`／`verify`（傳入完整 `HEAD` SHA，`verify` 加 `-config-repo deps/PJA-Config`，與 CI `release-info` 一致）產生並驗證 `pkg/release/release.json`（結束後還原開發版）；`config_version` 不是 `deps/PJA-Config` 子模組指標或其祖先（不可追溯）就失敗。
+5. 跑 `docker-build-images.sh`。
+6. 推送前對六個映像各跑一次 `trivy image --ignore-unfixed --exit-code 1 --severity HIGH,CRITICAL`（與 CI `build-images` 同一個釘 digest 的 trivy 映像，版本由 `TestToolchainVersionsAreConsistent` 比對）；有可修補的 HIGH／CRITICAL 漏洞就失敗，不推送。
+7. 跑 `docker-push-images.sh`。
+8. 寫 release trace 檔與 `.run/release/<tag>.release.json`。
 
 ## 主要參數
 - 第一個位置參數：`image-tag`

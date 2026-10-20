@@ -76,9 +76,11 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 這個腳本會：
 
 1. 設定 `IMAGE_TAG`
-2. 檢查升級窗口鎖與變更審批戳記，再以 `go run ./tools/pja releasemanifest generate`／`verify` 依實際產物寫出並驗證 `pkg/release/release.json`（嵌入映像；腳本結束後還原該檔）
-3. 執行 [docker-build-images.sh](../../scripts/docker-build-images.sh)
-4. 執行 [docker-push-images.sh](../../scripts/docker-push-images.sh)
+2. 檢查升級窗口鎖與變更審批戳記；工作樹有未提交修改時拒絕發版（映像與 `release.json` 記的 `HEAD` 會對不上）
+3. 以 `go run ./tools/pja releasemanifest generate`／`verify -config-repo deps/PJA-Config` 依實際產物寫出並驗證 `pkg/release/release.json`（嵌入映像；腳本結束後還原該檔）；`config_version` 不可追溯到 `deps/PJA-Config` 時失敗
+4. 執行 [docker-build-images.sh](../../scripts/docker-build-images.sh)
+5. 推送前以 `trivy image` 掃描六個映像，有可修補的 HIGH／CRITICAL 漏洞即失敗
+6. 執行 [docker-push-images.sh](../../scripts/docker-push-images.sh)
 
 若只想分開跑，也可以直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
