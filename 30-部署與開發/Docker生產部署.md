@@ -46,7 +46,7 @@ graph LR
 
 - `MYSQL_ROOT_PASSWORD`
 - `MYSQL_PASSWORD`
-- `REDIS_PASSWORD`：正式 Redis 以 `requirepass` 啟動，Central、World、Gate、Lobby 以 `redis.password` 讀取；未設定時 compose 直接報錯
+- `REDIS_PASSWORD`：正式 Redis 以 `requirepass` 啟動，Central、World、Gate、Lobby 以 `redis.password` 讀取；未設定時 compose 直接報錯。Redis 容器的啟動指令先 `rm -f /tmp/redis.conf` 再寫入設定檔（`umask 077`、`chown redis:redis`）：容器重啟時舊檔留在 `/tmp`，sticky 目錄保護使 `>` 覆寫失敗，Redis 就起不來
 - `GRAFANA_ADMIN_PASSWORD`
 - `REGISTRY`
 - `IMAGE_TAG`

@@ -156,6 +156,17 @@ DEBUG_ALLOW_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
 `DEBUG_ALLOW_CIDRS` 的目的，是讓 Docker 裡的 Prometheus 可以抓本機服務的 `/metrics`。
 
+## Lint 與格式化
+
+專案的 golangci-lint 版本固定在 `tools/gotools/go.mod`，GoLand 的 Go Linter 設定若指到全域安裝的 golangci-lint，版本與規則可能和 CI 不一致。先編出同版執行檔，再把 GoLand 的 golangci-lint 執行檔路徑指向它：
+
+```bash
+go build -modfile=tools/gotools/go.mod -o .run/golangci-lint.exe github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+```
+
+- 輸出到 `.run/`（已被 `.gitignore` 忽略）；Linux／macOS 去掉 `.exe`。`make ci-lint` 也會在同一路徑編出同一支執行檔，可直接沿用。
+- 提交前仍以 `go tool -modfile=tools/gotools/go.mod golangci-lint fmt <檔案>` 整理格式（gofumpt、gci），不要只靠 GoLand 內建的 goimports。
+
 ## 建議啟動順序
 
 1. 啟動 Docker 依賴
