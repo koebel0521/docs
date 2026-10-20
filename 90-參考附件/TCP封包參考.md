@@ -6,7 +6,7 @@
 
 | 套件 | 責任 |
 |------|------|
-| `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceEvent`、`Drainer` 與 `AddMsgHandler`；只有介面，沒有實作 |
+| `pkg/tcpruntime` | 契約：`Msg`、`Service`、`Socket`、`ServiceHandler`、`Drainer` 與 `AddMsgHandler`；只有介面，沒有實作 |
 | `pkg/framecodec` | frame 編解碼（`Coder`）與分級緩衝池 |
 | `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流、送出快速路徑）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期） |
 | `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`(*Server).admitConn`）、S2S accept 握手 |
@@ -92,7 +92,7 @@ type Msg interface {
 - `SendMsg` 之後訊息歸 socket，送完由 sendLoop `Put`；呼叫端不可再使用
 - 收到的訊息由 handler 事件執行完後 `Put`；handler 要跨 goroutine 保留資料須先複製
 - `msg.OwnedRaw`（`TakeOwnedRaw`）只送單一 socket，交換緩衝不複製，送出後歸還池；原本可多 socket 共用的 `msg.Raw` 已無呼叫端，已移除
-- `system.SharedHeartbeatReq` 是不回收的單例（pool 為 nil），心跳廣播重複送它
+- `system.SharedHeartbeatReq()` 回傳不回收的單例（pool 為 nil），心跳廣播重複送它
 
 ### PackTo 快速路徑
 
@@ -149,10 +149,10 @@ type Socket interface {
 - `Context()`：handler 執行期間帶該訊息 traceID 的 context；連線結束時取消
 - `PushEvent(fn)`：把任意工作送進事件迴圈，回傳 false 代表沒送入、fn 不會執行；現在經 host 投遞，與 `AppBase.PostEvent` 同保證：事件迴圈結束後一律回 false
 
-### ServiceEvent
+### ServiceHandler
 
 ```go
-type ServiceEvent interface {
+type ServiceHandler interface {
 	Connect(Service, Socket)
 	Disconnect(Service, Socket)
 	Init(Service)
@@ -174,7 +174,7 @@ tcpruntime.AddMsgHandler(svc, system.NewHelloRequest, r.onHelloRequest)
 ### Server
 
 ```go
-svc := tcpserver.New(name, baseApp, ownerEvent,
+svc := tcpserver.New(name, baseApp, ownerHandler,
 	tcpserver.WithConfig(tcpCfg),
 	tcpserver.WithWriteDeadTime(tcpsocket.PlayerWriteDeadline),
 	tcpserver.WithMaxFrameSize(gateUserMaxFrameSize),
@@ -205,7 +205,7 @@ socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即�
 ### Client
 
 ```go
-svc := tcpclient.New(name, baseApp, ownerEvent,
+svc := tcpclient.New(name, baseApp, ownerHandler,
 	tcpclient.WithTCPConfig(tcpCfg),
 	tcpclient.WithReadDeadTime(...), tcpclient.WithWriteDeadTime(...))
 ```
@@ -298,7 +298,7 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`。
 
 ## 心跳
 
-- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `s2shandshake.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq`；對端以 `system.HandleHeartbeatReq`（`pkg/msg/system`）回 `HeartbeatRes`，發起端用 `s2shandshake.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerDeadline`）收不到任何資料就讀取逾時斷線
+- 服務間：`appcore.HeartbeatInterval = 60s`。Gate 連 Central、World、Chat 的 client owner 以 `s2shandshake.BroadcastHeartbeat` 每 60 秒廣播 `SharedHeartbeatReq()`；對端以 `system.HandleHeartbeatReq`（`pkg/msg/system`）回 `HeartbeatRes`，發起端用 `s2shandshake.IgnoreHeartbeatRes` 忽略回覆。心跳只用來維持讀取活性：3 個間隔（`ServerDeadline`）收不到任何資料就讀取逾時斷線
 - 玩家：Client 送 `HeartbeatRequest`（2005），Gate `onHeartbeatReq` 回 `HeartbeatResponse`；已登入的連線才刷新最後心跳時間。Gate 每 5 秒（`userConnCheckInterval`）掃描，超過 `userHeartbeatTimeout = 90s` 沒心跳即斷線（逾時偵測上限約 95 秒）（`game_heartbeat_timeout_total{service="gate_user"}`）；建立連線後 30 秒（`userLoginHandshakeTimeout`）內未完成登入也斷線
 
 ## ConnectInfo 與 ServiceHello
