@@ -3,14 +3,14 @@
 World 發送 Record 事件時，`pkg/recordmq.Publisher` 會啟用 RabbitMQ publisher confirm：
 
 ```text
-PublishWithContext
+PublishWithDeferredConfirmWithContext
         ↓
 RabbitMQ ack / nack
         ↓
 Publish 回傳成功 / 錯誤
 ```
 
-`PublishWithContext` 成功只代表訊息已寫入連線；publisher confirm 才代表 RabbitMQ 已接受該訊息。發布端會等待 confirm，收到 `nack`、channel 關閉或 context 取消時回傳錯誤並增加發布錯誤指標。
+`PublishWithDeferredConfirmWithContext` 成功只代表訊息已寫入連線；publisher confirm 才代表 RabbitMQ 已接受該訊息。發布端會等待 confirm，收到 `nack`、channel 關閉或 context 取消時回傳錯誤並增加發布錯誤指標。
 
 Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，解析失敗會 NACK 並丟棄壞訊息。兩者用途不同：publisher confirm 保護 `World → RabbitMQ`，consumer ACK 保護 `RabbitMQ → Record`。
 
@@ -25,7 +25,7 @@ Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，�
 
 批次消費（`RunBatch`）全部成功時，批尾只送一次 `Ack(tag, multiple=true)`（單一 goroutine 依序處理同一 channel 的投遞，本批之前的投遞都已 ack／nack，所以只確認本批），省下逐筆 ack 的 frame 寫出與 flush；整批失敗退回逐筆處理時維持 `multiple=false`，避免連帶確認其他投遞。
 
-Record handler 回傳暫時性錯誤時，消費端 NACK 並放回佇列，第 n 次失敗後暫停 1 秒 × 2^(n-1)（上限 30 秒）再取下一筆；同一事件失敗 20 次或回傳永久性錯誤（例如 `occurred_at` 超出可寫入範圍，或缺少 `OccurredAt`：Record 只採生產者填的事件時間，不以接收時間補）時 NACK 不重排，交給死信佇列。handler panic 會被接住並記 `recordmq: handler panic`：整批 panic 視為整批失敗、退回逐筆，逐筆 panic 視為永久性錯誤直接進死信。暫停期間整個消費者停止取件：暫時性錯誤多半是下游 MySQL 故障，整體放慢才不會空轉。
+Record handler 回傳暫時性錯誤時，消費端 NACK 並放回佇列，第 n 次失敗後暫停 1 秒 × 2^(n-1)（上限 30 秒）再取下一筆；同一事件失敗 20 次或回傳永久性錯誤（例如 `occurred_at` 超出可寫入範圍，或缺少 `OccurredAt`：Record 只採生產者填的事件時間，不以接收時間補）時 NACK 不重排，交給死信佇列。handler panic 會被接住並記 Error `panic recovered`（`msg=recordmq handler`），逐筆處理失敗另記 Warn `recordmq: handler failed`：整批 panic 視為整批失敗、退回逐筆，逐筆 panic 視為永久性錯誤直接進死信。暫停期間整個消費者停止取件：暫時性錯誤多半是下游 MySQL 故障，整體放慢才不會空轉。
 
 消費結果計入 `recordmq_consume_total{result}`：`ok`（已寫入並 ack）、`retry`（暫時性失敗放回佇列）、`dead_letter`（壞格式、永久錯誤、連續失敗達上限或 handler panic，進 `<queue>.dead`）；序列事先建立。`dead_letter` 5 分鐘內有增加就觸發 `GameRecordConsumerDeadLetter`（page）：這些事件不會再寫進資料庫，需看 Warn `recordmq: handler failed` 確認原因，修好後把 `.dead` 的內容重送。消費端自己的連線中斷／建立失敗同樣以指數退避重連（1 秒倍增到 30 秒、抖動 ±30%，連上後歸零），Warn 附 `retryIn`；RabbitMQ 長時間故障時不再每秒一行，多個實例也不會同秒重撥。
 
