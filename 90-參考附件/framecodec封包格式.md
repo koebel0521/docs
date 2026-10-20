@@ -24,8 +24,8 @@
 
 - 值為**整包長度**（含自身 4 位元組與 msgID 2 位元組），不是 payload 長度。
 - 最小合法值為 `6`（空 payload）。
-- 最大合法值為 `maxMsgSize = 4 MB`（`4 * 1024 * 1024`，含標頭）。
-- 收到 `size < 6` 或 `size > 4 MB` 的封包視為壞包／惡意封包，Server 會直接斷線。
+- 最大合法值依連線種類而異（含標頭）：**玩家連線（Client↔Gate）64 KB**（Gate 的 `gateUserMaxFrameSize = 64 * 1024`）；服務間（S2S）連線 4 MB（`maxMsgSize = 4 * 1024 * 1024`）。
+- 收到 `size < 6` 或 `size` 超過該連線上限的封包視為壞包／惡意封包，Server 會直接斷線。Client 不可送超過 64 KB 的單一封包。
 
 ### msgID（2 位元組）
 
@@ -61,7 +61,7 @@ size=11      id=30102  "hello"
 TCP 是串流，一次 `Read` 不一定剛好拿到一個完整 frame，需自行組合 frame：
 
 1. 讀滿 4 位元組得 `size`。
-2. 檢查 `6 <= size <= 4 MB`，不合法直接斷線。
+2. 檢查 `6 <= size <= 該連線上限`（玩家連線 64 KB、S2S 4 MB），不合法直接斷線。
 3. 讀滿剩餘 `size - 4` 位元組（含 msgID 與 payload）。
 4. 解析 `msgID`（位元組 4～5，小端序）與 `payload`（從位元組 6 開始）。
 
@@ -84,7 +84,7 @@ Socket／OwnerBase 直接持有 `*framecodec.Coder`（`pkg/tcpsocket` 已沒有 
 
 ## 限制摘要
 
-- 單條封包最大 **4 MB**（含 6 位元組標頭），超過即斷線。
+- 單條封包最大：玩家連線 **64 KB**、S2S 連線 4 MB（皆含 6 位元組標頭），超過即斷線。
 - `msgID` 為 `uint16`，最大值 `65535`。
 - 整數一律使用小端序。
 - 沒有校驗碼／加密；完整性靠 TCP 傳輸層，安全性由上層協定負責。
