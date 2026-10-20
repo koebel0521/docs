@@ -212,7 +212,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 
 ### 設定與位址
 
-`tcpconfig.BuildConfig(v, appID)` 每次解析都即時讀 viper：
+`tcpconfig.BuildConfig(v)` 每次解析都即時讀 viper（listen/dial 的 appID 在解析時由呼叫端傳入）：
 
 - listen：`<appID>.listen.<service>.ip`（`host:port`），`ParseListenAddr` 解析為 IPv4 TCP 位址
 - dial：`<appID>.dial.<service>` 底下每個項目的 `ip`（`host:port` 字串），`ParseDialAddrs` 只檢查格式與埠號後排序去重，不做 DNS 解析；部分項目無效時略過，全部無效才回錯
