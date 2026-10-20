@@ -260,7 +260,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 ```
 
-重新部署會先對舊容器送 SIGTERM，等到 `stop_grace_period` 才 SIGKILL。各服務為：Gate 75 秒、World 80 秒（關機最壞約 75 秒：玩家資料寫回、落地檔與各關機任務，其中「stop board workers」任務逾時 10 秒，見[資料一致性](../10-核心流程/資料一致性.md)）、Central 65 秒、Chat 30 秒、Lobby 與 Record 各 20 秒（`compose.prod.yml`；`full`、`debug`、`core-test` 同值）。Gate 的 `drain_timeout`（預設 30 秒）只套給 drain 任務，最壞關機耗時＝各任務逾時加總＋2 次 5 秒（TCP 服務最後再多等一次背景工作 5 秒）。調整任一值，或調高 `drain_timeout`、新增關機任務時，要確認 `stop_grace_period` 仍大於該服務的關機耗時上限；各服務 `shutdown_plan_test.go` 的契約測試會把關。關機任務逾時（drain 除外）會有一筆 Error `shutdown timed out, goroutine dump` 供事後找出卡在哪裡。
+重新部署會先對舊容器送 SIGTERM，等到 `stop_grace_period` 才 SIGKILL。各服務為：Gate 75 秒、World 80 秒（關機最壞約 75 秒：玩家資料寫回、落地檔與各關機任務，其中「stop board workers」任務逾時 10 秒，見[資料一致性](../10-核心流程/資料一致性.md)）、Central 65 秒、Chat 30 秒、Lobby 與 Record 各 20 秒（`compose.prod.yml`；`full`、`debug`、`core-test` 同值）。Gate 的 `drain_timeout`（預設 30 秒，上限 40 秒，超過拒絕啟動）只套給 drain 任務，最壞關機耗時＝各任務逾時加總＋2 次 5 秒（TCP 服務最後再多等一次背景工作 5 秒）＋debug／tracing 收尾最多 4 秒。調整任一值，或調高 `drain_timeout`、新增關機任務時，要確認 `stop_grace_period` 仍大於該服務的關機耗時上限；各服務 `shutdown_plan_test.go` 的契約測試會把關。關機任務逾時（drain 除外）會有一筆 Error `shutdown timed out, goroutine dump` 供事後找出卡在哪裡。
 
 ## 7. 回滾
 
