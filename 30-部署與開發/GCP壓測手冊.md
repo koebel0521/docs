@@ -28,7 +28,7 @@
 | World `go.memory_limit_mb` | 512 | 768 | 留餘裕 |
 | MySQL `innodb_buffer_pool_size` | 128MB（dev） | 2G（遊戲庫）、512M（Central 庫） | 避免冷讀 |
 
-**單一來源 IP 最多 100 條連線**是寫死在程式裡的常數（`MaxConnectionsPerIP`），不是設定；另有每來源 IP 接入 10 次／秒、登入 30 次／10 秒的限流。5000 人至少要 50 個來源位址。做法：客戶端 VM 配 GCP **別名 IP 範圍**（`/26` 共 64 個位址，可承載約 6000 條連線），`soakload -srcnet <網段>` 讓玩家輪流綁定其中的位址。客戶端必須直連 Gate 的內網 IP；中間放負載平衡器時 Gate 看到的來源都是同一個位址，會被單 IP 限流擋住。
+**單一來源 IP 預設最多 100 條連線**（程式內常數 `MaxConnectionsPerIP`；Gate 設定 `session.max_connections_per_ip` 可覆寫，CGNAT 下多位玩家共用 IP 時可調高，壓測也可調高避免佔用過多來源位址）；另有每來源 IP 接入 10 次／秒、登入 30 次／10 秒的限流。5000 人至少要 50 個來源位址。做法：客戶端 VM 配 GCP **別名 IP 範圍**（`/26` 共 64 個位址，可承載約 6000 條連線），`soakload -srcnet <網段>` 讓玩家輪流綁定其中的位址。客戶端必須直連 Gate 的內網 IP；中間放負載平衡器時 Gate 看到的來源都是同一個位址，會被單 IP 限流擋住。
 
 ## 方案與估價
 
