@@ -14,7 +14,7 @@
 
 ## 沒有私人工具時
 
-本 runbook 與[問題排查筆記](./問題排查筆記.md)提到的 `tools/private/*`（dephealth、opsdiag、protocoldiag、supportdiag、playersnapshot、consistencysnapshot、staterepair、datasurgeon 等）以及 `go run ./tools/private/pja ...` 都是**私人工具**：放在被 `.gitignore` 忽略的 `tools/private/`，不在版控，換一台機器或乾淨 clone 沒有。版控內的 `tools/pja` 只有 `configartifact`、`configaudit`、`releasemanifest` 三個子命令。沒有私人工具時，直接打各服務的診斷埠（Central 6060、Gate 6061、World 6062、Lobby 6064、Record 6065、Chat 6066；正式環境只綁容器內或 `127.0.0.1`，需在主機上或經 SSH 通道）：
+本 runbook 與[問題排查筆記](./問題排查筆記.md)提到的 `tools/private/*`（dephealth、opsdiag、protocoldiag、supportdiag、playersnapshot、consistencysnapshot、staterepair、datasurgeon 等）以及 `go run ./tools/private/pja ...` 都是**私人工具**：放在被 `.gitignore` 忽略的 `tools/private/`，不在版控，換一台機器或乾淨 clone 沒有。版控內的 `tools/pja` 只有 `configartifact`、`configaudit`、`releasemanifest` 三個子命令。沒有私人工具時，直接打各服務的診斷埠（Central 6060、Gate 6061、World 6062、Lobby 6064、Record 6065、Chat 6066；正式環境的診斷埠只綁容器內，`compose.prod.yml` 沒有發布 606x 到主機，所以下表的 `curl -s localhost:<埠>/...` 在正式環境要改成 `docker exec <容器> wget -qO- http://127.0.0.1:<埠>/...`（映像只有 `wget`），或經同網段的 Prometheus 查；本機 dev 堆疊才能直接 curl）：
 
 | 私人工具 | 等價的版控內做法 |
 |------|------|
