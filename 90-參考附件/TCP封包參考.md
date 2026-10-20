@@ -168,7 +168,7 @@ type ServiceEvent interface {
 tcpruntime.AddMsgHandler(svc, system.NewHelloRequest, r.onHelloRequest)
 ```
 
-`AddMsgHandler[T]` 包裝型別斷言後呼叫 `OwnerBase.AddNewMsg`。同一 ID 重複註冊只保留第一個並記錄錯誤。owner 為已驗證（S2S 握手）服務時，handler 在註冊時包上 `guardAuthenticated`：連線 context 已取消或該 socket 已不在 owner 的連線集合中（例如被同節點新連線取代）時，訊息直接略過。
+`AddMsgHandler[T]` 包裝型別斷言後呼叫 `OwnerBase.AddNewMsg`。同一 ID 重複註冊只保留第一個並記錄錯誤。owner 為 S2S owner（已驗證，或建構時沒有標 `WithUntrustedPeer`；與是否開啟 `s2s_auth` 無關，開發環境與正式環境語意一致，只有面向玩家的 owner 例外）時，handler 在註冊時包上 `guardSerialized`：連線 context 已取消或該 socket 已不在 owner 的連線集合中（例如被同節點新連線取代）時，訊息直接略過。
 
 ## 建構
 
@@ -227,10 +227,10 @@ svc := tcpclient.New(name, baseApp, ownerEvent,
 2. `listen()` 監聽成功或失敗後註冊就緒檢查 `tcp_listen_<name>`（經 `WithReadyRegister` 傳入的 `RegisterReadyChecker`）：監聽失敗、尚未監聽或已 `StopAccepting` 時 `/ready` 回 503；監聽失敗時行程不退出
 3. `acceptLoop()`：
    - `Accept` 回 `net.ErrClosed` 或 owner 已關閉時結束；其他錯誤（EMFILE、ECONNABORTED 等）以 5ms 起加倍、上限 1 秒退避後重試
-   - `admitConn`：先檢查來源 IP 限流（`ratelimit.IPLimiter`），再取 `connSem` 槽位（`MaxConns`）；被拒直接關閉
+   - `admitConn`：先檢查來源 IP 限流（`ratelimit.IPLimiter`；表滿時淘汰最久未見的來源，不拒絕新來源），再取 `connSem` 槽位（`MaxConns`）；被拒直接關閉
    - 並發上限 `connSem`（`MaxConns`，未設定為 10000）滿時直接拒絕，不阻塞 accept loop
 4. `handleConn`：有 `AcceptHandshake[name]` 時先做 S2S 驗證，取得已驗證的節點 ID；失敗記 Warn 後關閉
-5. `OwnerBase.ServeConn(conn, id)`：建 socket、`id != 0` 時先 `SetID`、加入 `Sockets`、`Start()`（啟動收送兩個 goroutine）、`Connect` 回呼、`Wait()` 到連線結束、`Disconnect` 回呼並從 `Sockets` 移除
+5. `OwnerBase.ServeConn(conn, id)`：建 socket、`id != 0` 時先 `SetID`、加入 `Sockets`、`Start()`（真實 `Socket` 只啟動送出迴圈；測試替身沿用收送兩個 goroutine）、`Connect` 回呼、由 `ServeConn` 自己的 goroutine 直接跑接收迴圈（每條連線少一個只在 `Wait` 阻塞的 goroutine，約 2 個／連線，原為 3 個）再 `Wait()` 送出迴圈結束、`Disconnect` 回呼並從 `Sockets` 移除
 6. `Close()`：`CloseRuntime` 標記關閉、關閉所有 socket 與 listener，等待所有 goroutine 結束
 
 ### Client 端
@@ -328,7 +328,7 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 4. 監聽端以固定時間比對 token 雜湊，通過回 1 byte ack，失敗直接斷線（連出端 `ReadAck` 回錯）
 5. 同一節點以有效憑證重連時取代並關閉舊連線（多半是對端重啟留下的半開連線）
 
-驗證通過的節點 ID 交給 `ServeConn` 預先 `SetID`，且 owner 啟用 `guardAuthenticated`。
+驗證通過的節點 ID 交給 `ServeConn` 預先 `SetID`，且 S2S owner 啟用 `guardSerialized`（斷線與執行中的訊息互斥，且只處理仍在 owner 連線索引內的連線的訊息；與 `s2s_auth.enabled` 無關，關閉驗證的開發環境與整合測試走同一套語意，例如 Chat 斷線後晚到的 Join 不會再把成員掛回已斷的 Gate）。
 
 ## 滾動部署
 
