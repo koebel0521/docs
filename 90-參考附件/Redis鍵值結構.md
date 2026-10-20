@@ -71,8 +71,8 @@
 | `requestjournal:world:{worldID}:login` | String | World | 2 min（`requestjournalredis.ReplayTTL`） | 登入請求去重 |
 | `requestjournal:world:{worldID}:logout` | String | World | 2 min | 登出請求去重 |
 | ~~`requestjournal:world:{worldID}:validate`~~ | — | World | — | 已停用：World 恢復驗證去重只存本機（requestID 由本行程以時間單調產生，重啟後不重複），不寫 Redis |
-| `requestjournal:world:{worldID}:roll` | String | World | 2 min | 擲骰請求的完整回應，供重送時原樣回傳 |
-| `requestjournal:world:{worldID}:upgrade` | String | World | 2 min | 建築升級請求的完整回應 |
+| `requestjournal:world:{worldID}:roll` | String | World | 2 min | 擲骰請求的完整回應，供重送時原樣回傳；值為 `0x00` ＋ 二進位（2 byte 大端 MessageID ＋ payload），讀取相容舊版 JSON |
+| `requestjournal:world:{worldID}:upgrade` | String | World | 2 min | 建築升級請求的完整回應；編碼同 `:roll` |
 
 ## `fault:archive:*` — 故障歸檔
 
