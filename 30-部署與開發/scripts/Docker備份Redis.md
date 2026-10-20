@@ -17,7 +17,7 @@
 4. 只保留最近 `BACKUP_KEEP` 份 `redis-*.tar.gz`（預設 20，`0` 表示不清理）。
 
 ## 主要參數
-- 透過環境變數控制：`ENV_FILE`、`COMPOSE_FILE`、`BACKUP_DIR`、`TIMESTAMP`、`OUTPUT_FILE`、`VOLUME_NAME`、`BGSAVE_TIMEOUT_SECONDS`（預設 120）、`BUSYBOX_IMAGE`、`BACKUP_KEEP`
+- 透過環境變數控制：`ENV_FILE`、`COMPOSE_FILE`、`BACKUP_DIR`、`TIMESTAMP`、`OUTPUT_FILE`、`VOLUME_NAME`、`BGSAVE_TIMEOUT_SECONDS`（預設 120）、`BUSYBOX_IMAGE`、`BACKUP_KEEP`（須為非負整數，否則在備份前以 exit 2 失敗）
 
 ## 相關文件
 - [Docker還原Redis](./Docker還原Redis.md)
