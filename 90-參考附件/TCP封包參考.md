@@ -216,7 +216,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 
 - listen：`<appID>.listen.<service>.ip`（`host:port`），`ParseListenAddr` 解析為 IPv4 TCP 位址
 - dial：`<appID>.dial.<service>` 底下每個項目的 `ip`（`host:port` 字串），`ParseDialAddrs` 只檢查格式與埠號後排序去重，不做 DNS 解析；部分項目無效時略過，全部無效才回錯
-- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、根層 `max_connections`（正式鍵，0 不限制；`tcp.max_connections` 為已棄用別名，只在根層鍵未設定時沿用並記 Warn）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ServerOptionsWithDefaults`；0 保留預設值）；負值在啟動與熱重載時由 `bootstrap.NormalizeTuningKeys` 拒絕（`tcp.rate_limit_per_second`、`tcp.rate_limit_burst`、`tcp.socket_send_queue_depth`）
+- `tcp.rate_limit_per_second`（預設 10）、`tcp.rate_limit_burst`（預設 20）、根層 `max_connections`（正式鍵，0 不限制；`tcp.max_connections` 為已棄用別名，舊鍵有設定一律記 Warn，根層鍵有設定（含明確寫 0）時舊鍵被忽略，未設定才沿用舊鍵）、`tcp.socket_send_queue_depth`（預設 `tcpconfig.DefaultSocketSendQueueDepth = 10000`）；只有大於 0 的值才覆蓋預設（`ServerOptionsWithDefaults`；0 保留預設值）；負值在啟動與熱重載時由 `bootstrap.NormalizeTuningKeys` 拒絕（`tcp.rate_limit_per_second`、`tcp.rate_limit_burst`、`tcp.socket_send_queue_depth`）
 
 ## 連線生命週期
 
