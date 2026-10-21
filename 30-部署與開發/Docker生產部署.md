@@ -56,8 +56,8 @@ graph LR
 - `CHAT_IMAGE`
 - `LOBBY_IMAGE`
 - `RECORD_IMAGE`
-- `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`；World 與 Record 啟動時驗證 `rabbitmq.url` 可解析，壞值直接啟動失敗，錯誤訊息不含密碼）
-- **佔位密碼拒絕啟動**：`REDIS_PASSWORD`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`RABBITMQ_PASSWORD`、`GRAFANA_ADMIN_PASSWORD` 若仍以 `change_me`／`change-me` 開頭（照抄 `.env.prod.example`）：Central、Chat、Record、World 開資料庫前（Redis、MySQL 密碼）拒絕啟動，`scripts/ci-deploy.sh` 的 `preflight_secrets` 在關服前就中止部署（涵蓋不經 Go 程式讀取的 RabbitMQ、Grafana）。請用隨機值（例如 `openssl rand -hex 24`；RabbitMQ 密碼只用 URL 安全字元）
+- `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`；World 與 Record 啟動時驗證 `rabbitmq.url` 可解析且密碼不是 `change_me` 佔位值，壞值直接啟動失敗，錯誤訊息不含密碼）
+- **佔位密碼拒絕啟動**：`REDIS_PASSWORD`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`RABBITMQ_PASSWORD`、`GRAFANA_ADMIN_PASSWORD` 若仍以 `change_me`／`change-me` 開頭（照抄 `.env.prod.example`）：Central、Chat、Record、World 開資料庫前（Redis、MySQL 密碼）拒絕啟動，`scripts/ci-deploy.sh` 的 `preflight_secrets` 在關服前就中止部署（RabbitMQ 另外在 World、Record 啟動時由 `mqstartup.CheckURL` 檢查 `rabbitmq.url` 的密碼，所以不經 `ci-deploy.sh` 手動 `compose up` 也會被擋；只有 Grafana 不經 Go 程式讀取）。請用隨機值（例如 `openssl rand -hex 24`；RabbitMQ 密碼只用 URL 安全字元）
 - `LOTTERY_SECRET`：World 抽獎種子機密，覆寫 `docker/prod/config/world.yaml` 的 `lottery.secret`；未設定時 compose 直接報錯；World 啟動另拒絕短於 16 字元或 `change-me`／`change_me` 開頭的值（照抄範本佔位會啟動失敗）
 - `GRAFANA_ADMIN_USER`（預設 `admin`）
 - `PROMETHEUS_IMAGE`／`ALERTMANAGER_IMAGE`／`GRAFANA_IMAGE`／`REDIS_IMAGE`／`RABBITMQ_IMAGE`／`MYSQL_IMAGE`：第三方映像，範本已釘 digest，升級時一併更新
@@ -91,7 +91,7 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - `LOG_ASYNC_BUFFER`（選填，筆數，預設 0＝關閉，行為與以前相同）：開啟後日誌進 zerolog diode 環形緩衝、由單一 goroutine 寫 stderr，Gate／World 事件迴圈不再為每行付 write syscall（本機 benchmark 約 2.6µs/op → 0.19µs/op）。取捨：緩衝滿了丟最舊日誌，計入 `logger_async_dropped_total` 並在 stderr 寫一行 Warn `async log buffer overflow, entries dropped`；行程崩潰（panic、SIGKILL）時緩衝內最後幾筆可能遺失，正常結束由 `startup.Main` 的 `logger.Close()` 排空；標準庫 `log` 橋接在非同步模式下同步寫 stderr、不經緩衝；值寫錯時記 Warn `LOG_ASYNC_BUFFER invalid, async logging disabled` 並維持同步日誌（細節見[日誌輸出格式](../00-導讀/日誌輸出格式.md#非同步日誌log_async_buffer)）。建議壓測時先在單一服務試開（例如 8192）並觀察 `logger_async_dropped_total`，未決定正式環境是否預設開啟。
 - `compose.prod.yml` 把 `.env.prod` 的下列**選填執行期覆寫變數**轉進六個應用服務的 `environment`（`--env-file` 只用於 compose 內插，沒轉進 `environment` 的變數容器收不到；留空等同未設定）：`LOG_FORMAT`、`LOG_SAMPLE_RATE`、`LOG_ASYNC_BUFFER`、`PPROF_MUTEX_FRACTION`、`PPROF_BLOCK_RATE`。`DATA_CONFIG_VERSION_PATH` 只供非 compose 部署（compose 已把設定掛到預設路徑）。`tools/internal/configaudit` 守門：範本可覆寫段列出的名稱必須出現在每個服務的 `environment`，且 compose 的每個環境變數名稱必須對得上程式讀取者（`os.Getenv`）或某個 viper 鍵轉大寫底線的結果，日後改鍵名（例如 `mysql.username` 改 `mysql.user`）造成覆寫失效會在測試就被抓到。
 - 日誌層級由 `.env.prod` 的 `LOG_LEVEL`（`trace`／`debug`／`info`／`warn`／`error`，預設 `info`）控制，不合法的值讓服務拒絕啟動；設定檔路徑由 compose 的 `APP_CONFIG` 指定，命令列 `-config` 優先於它。
-- 設定以目錄掛載 `docker/prod/config:/config:ro`（每個容器看得到全部服務的設定檔）；單檔 bind mount 在宿主機以改名方式更新設定時會停在舊 inode，熱重載收不到。
+- 設定以目錄掛載 `docker/prod/config:/config:ro`（每個容器看得到全部服務的設定檔）；單檔 bind mount 在宿主機以改名方式更新設定時會停在舊 inode，熱重載收不到。另一個待確認的風險：掛載來源是部署 runner 的 checkout 目錄，下一個 tag 的 job 一開始 checkout 新 tag（早於 `ci-deploy.sh` 的 preflight）就會讓執行中的舊版服務立刻熱重載新設定；若 runner 用 `GIT_STRATEGY: clone`，目錄被刪掉重建後容器會停在已刪除的目錄，熱重載靜默失效。需確認部署主機 runner 的 build 目錄與 `GIT_STRATEGY`；較穩的做法是 `ci-deploy.sh` 把設定複製到帶版本的固定目錄再掛載（同時讓回滾能還原設定），目前未實作。出貨設定範本的內容已由 `tools/internal/configaudit` 的 `TestShippedConfigTemplatesPassProductionLoadPath` 走正式載入路徑守門。
 - 正式環境不傳 `FAULT_INJECT`；`go run ./tools/pja configaudit` 會檢查。
 - 告警通知：`monitoring` profile 含 Alertmanager，告警送往 `ALERTMANAGER_SECRET_DIR`（預設 `./alertmanager-secrets`，相對於 compose 檔目錄）下 `webhook_url` 檔案內的 URL（單行，例如團隊聊天室或值班系統的接收端）。目錄或檔案不存在時告警只會留在 Alertmanager 介面（`127.0.0.1:9093`），不會通知任何人；該目錄已列入 `.gitignore`。
 - Prometheus 時序資料放在具名資料卷 `prod-prometheus-data`，重建容器不會清空；保留期由 `PROMETHEUS_RETENTION` 控制（預設 `15d`）。
