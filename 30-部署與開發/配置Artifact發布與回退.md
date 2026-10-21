@@ -96,7 +96,7 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
   -RetentionReport
 ```
 
-確認盤面已全部搬到目前版本後，再執行 cleanup 的 dry run：
+報表的 `prunable_artifacts` 是實際計數，與 cleanup dry run 的 `candidate_count` 同口徑（不再固定為 0）。確認盤面已全部搬到目前版本後，再執行 cleanup 的 dry run：
 
 ```powershell
 .\scripts\cleanup-data-config-releases.ps1 -Root config\data
