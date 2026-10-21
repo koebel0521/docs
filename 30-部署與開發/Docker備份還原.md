@@ -27,7 +27,7 @@
 
 - `~/pja-backups/mysql/mysql-YYYYMMDD-HHMMSS.sql.gz`（repo 外；權限 0600、目錄 0700，腳本以 `umask 077` 建立）
 
-只保留最近 `BACKUP_KEEP` 份（預設 20，`0` 表示不清理）；備份與正式資料同機，不輪替會慢慢寫滿磁碟，需要更長保存或異地備份請自行複製。CD 部署（[Docker發版流程](Docker發版流程.md)）會在服務停止後多備份一份，檔名帶 `-final`（`TIMESTAMP` 後綴），也算在保留份數內。
+`BACKUP_SKIP_RECORD_EVENTS=1` 可排除全部 `record_events_*` 日分表（預設 0＝一併備份；事件流水另行保存或可接受遺失時使用，停機備份會因此縮短）。只保留最近 `BACKUP_KEEP` 份（預設 20，`0` 表示不清理）；備份與正式資料同機，不輪替會慢慢寫滿磁碟，需要更長保存或異地備份請自行複製。CD 部署（[Docker發版流程](Docker發版流程.md)）會在服務停止後多備份一份，檔名帶 `-final`（`TIMESTAMP` 後綴），也算在保留份數內。
 
 可覆寫：
 
