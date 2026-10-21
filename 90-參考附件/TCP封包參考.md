@@ -11,7 +11,8 @@
 | `pkg/tcpsocket` | `Socket`（收送迴圈、deadline、限流、送出快速路徑）、`Sockets`（連線集合）、`OwnerBase`（訊息註冊、廣播佇列、生命週期） |
 | `pkg/tcpserver` | `Server`：監聽、accept、接入裁決（`(*Server).admitConn`）、S2S accept 握手 |
 | `pkg/tcpclient` | `Client`：dial、重連退避、位址輪替、S2S dial 握手 |
-| `pkg/tcpconfig` | `Config`、`ServerOptions`、listen／dial 位址解析（`BuildConfig`、`ListenAddr`、`DialAddrs`） |
+| `pkg/tcpconfig` | `Config`、`ServerOptions`、listen／dial 位址解析（`ListenAddr`、`DialAddrs`）；不依賴 viper |
+| `pkg/tcpconfig/viperbuild` | 從 viper 組出 `tcpconfig.Config`（`BuildConfig`），只給組合根呼叫 |
 | `pkg/tcpregistry` | `Registry`：登記各服務 owner、依名稱查找、`Drain` 滾動部署 |
 | `pkg/servicefinder` | `Finder` 介面（`Gate()`、`Central()`、`World()`、`User()`、`Chat()`、`Lobby()`），由 `tcpregistry.Registry` 實作 |
 | `pkg/s2sauth` | 服務間 TLS 1.3 + 節點 token 驗證、來源 CIDR 限制 |
@@ -212,7 +213,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 
 ### 設定與位址
 
-`tcpconfig.BuildConfig(v)` 每次解析都即時讀 viper（listen/dial 的 appID 在解析時由呼叫端傳入）：
+`viperbuild.BuildConfig(v)`（`pkg/tcpconfig/viperbuild`）每次解析都即時讀 viper（listen/dial 的 appID 在解析時由呼叫端傳入）：
 
 - listen：`<appID>.listen.<service>.ip`（`host:port`），`ParseListenAddr` 解析為 IPv4 TCP 位址
 - dial：`<appID>.dial.<service>` 底下每個項目的 `ip`（`host:port` 字串），`ParseDialAddrs` 只檢查格式與埠號後排序去重，不做 DNS 解析；部分項目無效時略過，全部無效才回錯
