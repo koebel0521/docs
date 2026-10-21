@@ -162,6 +162,8 @@ ALTER TABLE player_mission_state ADD COLUMN period_completion_count int NOT NULL
 
 -- Central：帳號改為精確比對（區分大小寫與重音）
 ALTER TABLE `user` MODIFY `account` varchar(100) COLLATE utf8mb4_bin NOT NULL;
+-- 關閉 AutoMigrate（AUTO_MIGRATE_DISABLED=true）時沒人會自動改定序：Central 啟動會檢查，user.account 不是 utf8mb4_bin 就拒絕啟動
+-- （`user.account collation is ..., want utf8mb4_bin`），避免漏跑時大小寫變體繞過封禁與限流。
 
 -- World：盤面子表不再有指向 player_board_state 的外鍵（改應用層一致性）；僅既有庫需要，新庫不會建立。
 -- 約束名稱依序為 fk_player_board_road_star_board、fk_player_board_building_board；不要動索引，主鍵即查詢用索引。
