@@ -79,6 +79,7 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 
 ### 機密與對外連接埠
 
+- **首次部署前先檢查佔位密碼**：`.env.prod` 裡 `MYSQL_ROOT_PASSWORD`、`MYSQL_PASSWORD`、`REDIS_PASSWORD`、`RABBITMQ_PASSWORD`、`GRAFANA_ADMIN_PASSWORD` 不可是 `change_me`／`change-me` 開頭的範本值（`grep -inE 'change[_-]me' .env.prod` 應無輸出）。Go 服務只擋自己讀的 MySQL 應用帳號、Redis 與 `RABBITMQ_URL` 的佔位密碼（拒絕啟動）；MySQL root 與 Grafana 只有 CI 部署腳本的 preflight 會擋，而首次手動 `compose up` 不經過它。MySQL、RabbitMQ 的密碼只在資料卷**第一次初始化**時生效，之後改 `.env.prod` 不會改變實際密碼，必須另外執行 `ALTER USER`／`rabbitmqctl change_password`；若照範本初始化過，要視為密碼已洩漏而更換。
 - MySQL 帳密只由環境變數提供：compose 把 `MYSQL_USER`／`MYSQL_PASSWORD`／`MYSQL_DATABASE` 以 `MYSQL_USERNAME`／`MYSQL_PASSWORD`／`MYSQL_DBNAME` 注入 Central、World、Chat，設定檔的 `mysql.password` 留空。
 - RabbitMQ 只承載 Record 事件（World 一般事件與 MySQL record outbox → Record）；任務進度在玩家請求內同步套用，不經 RabbitMQ（任務佇列已於 2026-10-08 移除）。World 啟動時連不上 RabbitMQ 不拒絕啟動，改在背景重試，見 [RabbitMQ 發布可靠性](../00-導讀/RabbitMQ發布可靠性.md#啟動連不上-rabbitmq)。正式 compose 內含 `rabbitmq` 服務，只在內部網路提供；World 以 `RABBITMQ_URL` 連線，設定檔的 `rabbitmq.url` 留空。
 - Central 有設定 Redis（`redis.addr` 或 `redis.master_name` 任一非空）卻在啟動時連不上，直接拒絕啟動，不再靜默降級成單機記憶體模式；兩者皆空才走單機記憶體模式（僅開發與測試）。正式 compose 的 `central` 因此 `depends_on` `redis`（`service_healthy`）。
@@ -201,7 +202,7 @@ ALTER TABLE combat_session ADD INDEX idx_combat_session_settled_at (settled_at),
 
 | 服務 | MaxOpenConns | MaxIdleConns | ConnMaxLifetime | ConnMaxIdleTime | 設定方式 |
 |------|-------------|-------------|----------------|----------------|---------|
-| Central、Chat、World、Record（全部） | 25（`mysql.max_open_conns`） | 同 MaxOpenConns（未設定時等於開啟上限，`mysql.max_idle_conns`；World 設定檔明設 40） | 1h | 10m | 各服務經 `dbstartup.MySQLConfig` 讀設定檔的 `mysql.max_open_conns`／`mysql.max_idle_conns`，交給 `pkg/mysql`（Central、Chat、World 走 `mysql.Open`，Record 走 `mysql.ConnectWithContext`） |
+| Central、Chat、World、Record（全部） | 25（`mysql.max_open_conns`） | 同 MaxOpenConns（未設定時等於開啟上限，`mysql.max_idle_conns`；World 設定檔明設 40） | 1h | 10m | 各服務經 `dbstartup.MySQLConfig` 讀設定檔的 `mysql.max_open_conns`／`mysql.max_idle_conns`，交給 `pkg/mysql`（Central、Chat、World 走 `mysql.Open`，Record 走 `mysql.Connect`） |
 
 > `max_open_conns`／`max_idle_conns` 設 0 或負數時用預設值（閒置上限預設等於開啟上限，低於它時登入尖峰用完的連線會被反覆關閉再重建）；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。服務連線另把 session 的 `innodb_lock_wait_timeout` 設為 4 秒（`lockWaitTimeoutSeconds`；MySQL 預設 50 秒），刻意短於 World 玩家寫回期限 5 秒：客戶端 ctx 逾時只關 TCP，伺服器端等鎖的語句會等到這個上限才回滾，等鎖超過時先以 Error 1205 結束（不觸發斷路器），而不是由客戶端先逾時被算成資料庫故障。經 `mysql.OpenDSN` 開的連線同樣套用這個上限（`applyLockWaitAndDialTimeout`）。
 
