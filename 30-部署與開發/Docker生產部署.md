@@ -199,7 +199,7 @@ ALTER TABLE player_mission_event ADD INDEX idx_player_mission_event_applied_at (
 
 `PlayerMissionEvent.PlayerID` 已加 `index:idx_player_mission_event_player`，新庫由 AutoMigrate 自動建。PJA-Database 開發期 `migrations/` 為空、表由 AutoMigrate 建立，所以沒有在上游加 migration；`config_version` 不變。MySQL 8.0 拋棄式容器、20 萬列的 `EXPLAIN`：加索引前 `type=ALL` 預估 219,139 列，加索引後 `type=range`、`key=idx_player_mission_event_player` 預估 200 列。壓測庫的 `player_mission_event` 有 1513 萬列，屬須先手動 `ALTER` 的既有大庫。
 
-大表建索引會鎖表時間較長，請在離峰執行。`combat_session` 與 `record_outbox_event` 的保留期清理見[資料一致性](../10-核心流程/資料一致性.md)；World 設定檔 `retention.outbox_sent_days`（預設 30）、`retention.combat_session_days`（預設 90）、`retention.unsettled_combat_session_days`（預設 30，未結算且 `expires_at` 過期的場次）、`retention.mission_event_days`（預設 30，`player_mission_event` 依 `applied_at`），`0` 表示永久保留，其餘不得小於 7。首次啟用時積壓的歷史列會在第一輪（World 啟動後）以每批 1000 列分批刪完，大庫請先確認 `idx_combat_session_settled_at`、`idx_combat_session_expires_at`、`idx_player_mission_event_applied_at` 已建；只想先觀察可暫時設 `0`。
+大表建索引會鎖表時間較長，請在離峰執行。`combat_session` 與 `record_outbox_event` 的保留期清理見[資料一致性](../10-核心流程/資料一致性.md)；World 設定檔 `retention.outbox_sent_days`（預設 30）、`retention.combat_session_days`（預設 90）、`retention.unsettled_combat_session_days`（預設 30，未結算且 `expires_at` 過期的場次）、`retention.mission_event_days`（預設 30，`player_mission_event` 依 `applied_at`），`0` 表示永久保留，其餘不得小於 7。首次啟用時積壓的歷史列會在第一輪（World 啟動後約 5 分鐘）以每批 1000 列、批間停 100ms、每批獨立 ReadCommitted 交易分批刪完；`mission_event_days` 的下限是 max(7, 任務補償回看天數)，實際刪除天數取 max(`mission_event_days`, `outbox_sent_days`)。大庫請先確認 `idx_combat_session_settled_at`、`idx_combat_session_expires_at`、`idx_player_mission_event_applied_at` 已建：缺索引時該段清理被跳過並計入 `game_retention_ops_total{result="error"}`（告警 `GameRetentionPurgeFailing`），日誌帶 `ALTER` 提示。只想先觀察可暫時設 `0`。
 
 
 ### 連線池設定
