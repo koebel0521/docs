@@ -219,6 +219,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 `ci-deploy.sh` 預期關服維護，流程固定：
 
 1. 先拉新映像，備份 MySQL，並預熱（prewarm）停機期間要 `go run` 的 Go 工具（`tools/pja`、`deps/PJA-Database` 的 `datamigrate`）：編譯結果進具名 volume `pja-gocache`（與 `pja-gomod` 模組快取），停機後不必冷編譯，編譯失敗也在關服之前就中止。接著以唯讀掛載 `DATA_CONFIG_ROOT` 跑 `configartifact -dry-run` 預檢設定 artifact：來源驗證或換版規則失敗時在這裡中止，**服務尚未停止**。`.env.prod` 以 `scripts/lib/envfile.sh` 的 `env_get` 逐鍵讀（compose dotenv 規則，不 `source`，`MYSQL_DSN` 可不加引號）；CI 中 `ENV_FILE` 必須是絕對路徑。
+1a. **關服之前**的 preflight：`preflight_config` 之後再跑 `preflight_secrets`，檢查 `.env.prod` 的 `REDIS_PASSWORD`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`RABBITMQ_PASSWORD`、`GRAFANA_ADMIN_PASSWORD` 是否仍以 `change_me`／`change-me`（不分大小寫）開頭；有任何一個是照抄範本的佔位值就中止部署（不會停服），訊息指出是哪個鍵。RabbitMQ 與 Grafana 不經 Go 程式讀取，只有這道檢查擋得住
 2. 停止六個服務（整批替換，不跨發版混跑），**停服後再備份一次 MySQL**（檔名帶 `-final` 後綴，例如 `mysql-20261020-120000-final.sql.gz`）：World 關機時會整批寫回玩家異動，關服前的備份不含這段，migration 損壞資料時要以停服後的最終狀態為還原點。這次備份落在維護窗口內，維護時間因此多出一次 `mysqldump` 的時間（資料量大時需留意 `deploy-production` 的 30 分鐘 job timeout）。
 3. 發布 `config/data` 設定 artifact。World 啟動會比對 `current.json` 與映像內的 `release.json`，兩者必須同批更新，因此設定隨發版自動發布。
 4. 執行 DB migration，把 `.env.prod` 的映像更新為 `images.env` 的 digest（沒有該檔時用 tag），啟動並等待六個服務 healthy（上限 `HEALTH_TIMEOUT` 秒，預設 180；必須是正整數秒，寫成 `3m` 這類時長字串會在任何停服動作之前以結束碼 2 中止，不會讓健康檢查與回滾被跳過而假成功）。維護結束後，若 `monitoring` profile 有在跑，會以 `--force-recreate --no-deps` 重建 `prometheus` 與 `alertmanager`：告警規則與 Alertmanager 設定是單檔 bind mount，換版後容器仍指向舊 inode，不重建就不會載入新規則。重建失敗只印 `WARN`（規則可能是舊的），不回滾已成功的應用部署。

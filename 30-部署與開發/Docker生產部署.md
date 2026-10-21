@@ -56,7 +56,8 @@ graph LR
 - `CHAT_IMAGE`
 - `LOBBY_IMAGE`
 - `RECORD_IMAGE`
-- `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`）
+- `RABBITMQ_USER`／`RABBITMQ_PASSWORD`（密碼只用 URL 安全字元，compose 會組成 `RABBITMQ_URL`；World 與 Record 啟動時驗證 `rabbitmq.url` 可解析，壞值直接啟動失敗，錯誤訊息不含密碼）
+- **佔位密碼拒絕啟動**：`REDIS_PASSWORD`、`MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`、`RABBITMQ_PASSWORD`、`GRAFANA_ADMIN_PASSWORD` 若仍以 `change_me`／`change-me` 開頭（照抄 `.env.prod.example`）：Central、Chat、Record、World 開資料庫前（Redis、MySQL 密碼）拒絕啟動，`scripts/ci-deploy.sh` 的 `preflight_secrets` 在關服前就中止部署（涵蓋不經 Go 程式讀取的 RabbitMQ、Grafana）。請用隨機值（例如 `openssl rand -hex 24`；RabbitMQ 密碼只用 URL 安全字元）
 - `LOTTERY_SECRET`：World 抽獎種子機密，覆寫 `docker/prod/config/world.yaml` 的 `lottery.secret`；未設定時 compose 直接報錯；World 啟動另拒絕短於 16 字元或 `change-me`／`change_me` 開頭的值（照抄範本佔位會啟動失敗）
 - `GRAFANA_ADMIN_USER`（預設 `admin`）
 - `PROMETHEUS_IMAGE`／`ALERTMANAGER_IMAGE`／`GRAFANA_IMAGE`／`REDIS_IMAGE`／`RABBITMQ_IMAGE`／`MYSQL_IMAGE`：第三方映像，範本已釘 digest，升級時一併更新
