@@ -274,7 +274,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 | `Unpack` 失敗 | 關閉連線 | 丟棄（`tcp_dropped_messages_total{reason="unpack"}`），連線保留 |
 | handler panic | 關閉連線 | 丟棄（`reason="handler_panic"`），連線保留 |
 | eventCh 已滿 | 關閉連線 | 阻塞等待（背壓）直到送入或連線結束 |
-| 解碼錯誤日誌 | Warn | Error |
+| 解碼錯誤日誌 | Warn（每 10 秒取樣一行，次數看計量） | Error |
 
 eventCh 滿時兩者都計 `game_event_queue_overflow_total`，以 `action` 標籤區分：玩家連線被關為 `closed`，S2S 阻塞等待後送入為 `backpressure`（第十一輪；`GameQueueOverflow` page 只看 `closed`，背壓另由 warning `GameEventQueueBackpressure` 持續 5 分鐘才響）。
 

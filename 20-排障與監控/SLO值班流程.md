@@ -58,3 +58,20 @@
 - SLO 告警是入口，不是結論
 - 先看趨勢，再看單點 log
 - 先看 `summary`，再看原始數字，最後才手動重算
+
+## 告警索引
+
+本文件是下列告警的 `runbook_url`。各告警的完整條件、`for`、等級與判讀寫在 [指標面板](./指標面板.md)（以告警名稱搜尋）；處置順序依本文件。
+
+| 告警 | 等級 | 說明 |
+| --- | --- | --- |
+| `GameLoginAvailabilityLow` | warning | 登入可用率低於 99%，先看 login outcomes 與 handler latency |
+| `GameLoginCentralBusy` | warning | Central 登入併發滿載而拒絕登入，先看開服／大批重連尖峰與 bcrypt 併發 |
+| `GameLogoutAvailabilityLow` | warning | 登出可用率低於 99%，先看 logout outcomes 與 replay cache |
+| `TCPReconnectSuccessLow` | warning | {{ $labels.instance }} 連 {{ $labels.service }} 的 S2S 重連成功率低於 99%，先看 reconnect outcomes 與 socket queue overflow |
+| `GameLoginFailureRatioHigh` | warning | 5 分鐘內登入失敗率超過 10% |
+| `TCPReconnectFailuresSustained` | warning | {{ $labels.instance }} 連 {{ $labels.service }} 重連持續失敗且沒有成功，依賴服務可能斷線或網路異常 |
+| `GameHandlerP95High` | warning | handler {{ $labels.handler }} 的 P95 超過 0.2 秒 |
+| `GameHandlerP99Critical` | page | handler {{ $labels.handler }} 的 P99 超過 0.5 秒，明顯影響玩家體驗 |
+| `GameHTTPErrorRatioHigh` | warning | {{ $labels.job }} 路由 {{ $labels.route }} 的 HTTP 5xx 比例超過 1% |
+| `GameHTTPLatencyP99High` | warning | {{ $labels.job }} 的 HTTP 請求 P99 超過 1 秒 |
