@@ -7,4 +7,4 @@
 - 變更集可同時回傳 inventory 與 client-visible variable 更新。
 - Item Action 不等同 Effect；其他 Item Type、`Param3` 與 `ItemSource` 尚未支援。
 
-動作執行器（`item.Executor`、`item.Handler`）在 `internal/gamecore/item`；World 的 AdjustVariable 轉接器在 `cmd/world/internal/itemaction`，使用流程在 `cmd/world/internal/board/use_item.go`。Handler 由組合根（`services.Start`）註冊。
+動作執行器（`item.Executor`、`item.Handler`）在 `internal/gamecore/item`；World 的 AdjustVariable 轉接器在 `cmd/world/internal/itemaction`，使用流程在 `cmd/world/internal/board/use_item.go`。Handler 由 World `services` 套件內的 `start`（`cmd/world/internal/services/services.go`）註冊；組合根是 `cmd/world/run.go`。
