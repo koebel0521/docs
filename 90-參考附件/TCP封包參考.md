@@ -139,13 +139,12 @@ type Socket interface {
 	Start()
 	Close()
 	Wait()
-	SetKey(string)
 	SetID(int64)
 	SetData(any)
 }
 ```
 
-- `Key()`：建立時由 `netx.NewSocketKey()` 產生的連線唯一鍵；`ID()`：綁定的玩家 ID 或節點 ID（`Sockets.ByID` 依此索引）
+- `Key()`：建立時由 `netx.NewSocketKey()` 產生的連線唯一鍵；`ID()`：綁定的玩家 ID 或節點 ID（`Sockets.ByID` 依此索引）；key 只在加入 owner 前由 `Sockets.AddNew`／`ServeConn` 設定（`SetKey` 在 `tcpsocket` 的未匯出 `keyedSocket`，不在 `Socket` 介面），handler 不能改
 - `Context()`：handler 執行期間帶該訊息 traceID 的 context；連線結束時取消
 - `PushEvent(fn)`：把任意工作送進事件迴圈，回傳 false 代表沒送入、fn 不會執行；現在經 host 投遞，與 `AppBase.PostEvent` 同保證：事件迴圈結束後一律回 false
 
@@ -196,7 +195,7 @@ go svc.Start()
 | `WithConfig(tcpCfg)` | 讀寫逾時設為 `tcpsocket.ServerIOTimeout`，並套用 `tcpCfg` 的 `ServerOptions` 與位址解析 |
 | `WithReadTimeout`／`WithWriteTimeout` | 只接受正值；未設定預設 30 秒 |
 | `withServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
-| `WithTCPConfig(cfg)` | 只設定位址解析與握手 |
+| `withAddrConfig`（不匯出） | 位址解析與握手設定，由 `WithConfig` 呼叫；`WithTCPConfig` 只剩 tcpclient 有 |
 | `WithSocketOptions(...)` | socket 層選項（型別為 `tcpsocket.Option`） |
 | `WithReadyRegister(fn)` | 就緒檢查的註冊函式；正式環境傳 `debug.Server` 的 `RegisterReadyChecker`（由 `startup.InitializeObservability` 回傳的 `*debug.Server` 經組合根傳遞），不設定時不註冊。全域的 `debug.Default`、`debug.RegisterReadyChecker`、`debug.CheckReady` 已刪除 |
 | `WithMaxFrameSize(n)` | 收包 frame 上限 |
@@ -364,7 +363,7 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 
 - 啟用：旗標 `-protocol-record` > 環境變數 `DEBUG_PROTOCOL_RECORD` > 設定 `protocol_record_enabled`
 - payload：`protocol_record_payload_enabled` 允許時，再由 `DEBUG_PROTOCOL_RECORD` 決定
-- 容量與保留：`protocol_record_limit`、`protocol_record_ttl`；落檔目錄 `protocol_record_file_dir`（目錄權限 0700、檔案 0600，內含 socket key 與訊息內容；開檔／寫入失敗只在由成功轉失敗時記一筆日誌，避免磁碟滿時洗版）
+- 容量與保留：`protocol_record_limit`、`protocol_record_ttl`；落檔目錄 `protocol_record_file_dir`（目錄權限 0700、檔案 0600，內含 socket key 與訊息內容；開檔／寫入失敗只在由成功轉失敗時記一筆日誌，避免磁碟滿時洗版）；每服務每小時檔上限 256 MiB（`defaultMaxFileBytes`，不可設定），超過後丟棄記錄到下一個小時，並只記一筆 Warn `protocol file size cap reached, records dropped until next hour`
 
 ### 日誌
 
