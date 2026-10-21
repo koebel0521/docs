@@ -117,3 +117,19 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
 ## 7. 相關環境變數
 
 - `DATA_CONFIG_VERSION_PATH`：啟動時記錄設定版本用的 `version.json` 路徑，未設定時看工作目錄下的 `config/data/version.json`。檔案不存在只記警告，檔案存在但內容損壞會擋住啟動。
+
+## 8. 排程換版（effective_at）
+
+要讓新配置在指定時間才生效，用 PJA-Config 建置時帶 `-EffectiveAt`（`Build-All.ps1`／`Generate-Version.ps1`，任何 `DateTimeOffset` 可解析的時間，會轉成 UTC 寫入 `version.json` 的 `effective_at`），再照第 1 節發布：
+
+```powershell
+.\Scripts\Build-All.ps1 -EffectiveAt "2026-11-01T04:00:00+08:00"
+```
+
+- 生效前沿用父 release：`current.json` 已指向新版本，但 World 在 `effective_at` 之前繼續載入 `parent_config_version`；`pkg/dataconfig.LoadActiveSnapshot` 與熱重載（`errReloadScheduled`）都走同一判斷。到點後 watcher 的計時器觸發 reload 換版，不需再發布。
+- 以 Central 校正時鐘判斷：World 用 `App.GameNow`（Central TimeSync 校正後的遊戲時鐘），不用主機時鐘，多台主機才會同一時刻換版。
+- World 首次 TimeSync 前一律視為未生效、不換版（主機時鐘偏快會讓這台提早換版）；監看 goroutine 對時前不排計時器，首次對時後重跑 reload：該換馬上換，沒到就以校正時間重設計時器（commit `d232bc76e`）。
+- 首次發布（沒有父 release）不可設定未來時間：無從退讓，載入會回 `future effective config requires a parent release`。排程換版只用於已有父版本的後續發布。
+- 回退仍走第 4 節流程；排程中的版本想取消，回退到父版本或重新發布不帶 `-EffectiveAt` 的版本。
+
+行為與熱重載的交會見[配置熱重載](配置熱重載.md)。
