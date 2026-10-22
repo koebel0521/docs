@@ -195,7 +195,27 @@ ALTER TABLE combat_session ADD INDEX idx_combat_session_settled_expires (settled
 
 -- World：任務事件的保留期清理依 applied_at 分批刪除；player_mission_event 是大表（壓測庫 1513 萬列），務必升級前先建。
 ALTER TABLE player_mission_event ADD INDEX idx_player_mission_event_applied_at (applied_at), ALGORITHM=INPLACE, LOCK=NONE;
+
+-- 移除無查詢使用的次要索引（4c7139993，2026-10-22）。這些索引不影響正確性，只讓每筆寫入多維護索引項；
+-- AutoMigrate 不會刪舊索引，既有庫要自己 DROP（可在離峰執行，也可延後）。
+-- **索引名由 gorm 預設命名規則（idx_<表>_<欄>）推得，部署前先 SHOW INDEX FROM <表> 核對實際名稱再執行，不存在就略過。**
+-- World：record_outbox_event 的 next_attempt_at、lease_until 單欄索引（領取走 idx_record_outbox_due，租約只在 UPDATE 寫入）
+DROP INDEX idx_record_outbox_event_next_attempt_at ON record_outbox_event;
+DROP INDEX idx_record_outbox_event_lease_until ON record_outbox_event;
+-- World：player_lottery_entry_state 的 group_id 單欄索引（主鍵 (player_id, group_id, sub_id) 已涵蓋 player_id 前綴）
+DROP INDEX ix_player_lottery_entry_state_player_group ON player_lottery_entry_state;
+-- Record：record_events 只留 idx_record_user_time（依玩家＋時間查詢）與 request_id、trace_id 索引。
+-- 要刪的 idx_record_type_time、idx_record_world_time、idx_record_source_time 不只在 record_events，
+-- 也在每張日分表 record_events_YYYYMMDD。先用下列查詢產生實際存在的語句，核對後再執行：
+SELECT CONCAT('ALTER TABLE `', table_name, '` DROP INDEX `', index_name, '`;') AS stmt
+FROM information_schema.statistics
+WHERE table_schema = DATABASE()
+  AND table_name REGEXP '^record_events(_[0-9]{8})?$'
+  AND index_name IN ('idx_record_type_time', 'idx_record_world_time', 'idx_record_source_time')
+GROUP BY table_name, index_name;
 ```
+
+日分表只會由 Record 補建「新的」表，既有分表的索引不會被改；新建的日分表（模型已拿掉這三個索引）從此不再帶它們，所以只需處理既有表，保留期內的舊分表隨 `record_table` 保留期清理自然消失，嫌麻煩也可只處理 `record_events` 與最近幾天的分表。
 
 `PlayerMissionEvent.PlayerID` 已加 `index:idx_player_mission_event_player`，新庫由 AutoMigrate 自動建。PJA-Database 開發期 `migrations/` 為空、表由 AutoMigrate 建立，所以沒有在上游加 migration；`config_version` 不變。MySQL 8.0 拋棄式容器、20 萬列的 `EXPLAIN`：加索引前 `type=ALL` 預估 219,139 列，加索引後 `type=range`、`key=idx_player_mission_event_player` 預估 200 列。壓測庫的 `player_mission_event` 有 1513 萬列，屬須先手動 `ALTER` 的既有大庫。
 
