@@ -27,7 +27,7 @@ Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，�
 
 Record handler 回傳暫時性錯誤時，消費端 NACK 並放回佇列，第 n 次失敗後暫停 1 秒 × 2^(n-1)（上限 30 秒）再取下一筆；同一事件失敗 20 次或回傳永久性錯誤（例如 `occurred_at` 超出可寫入範圍，或缺少 `OccurredAt`：Record 只採生產者填的事件時間，不以接收時間補）時 NACK 不重排，交給死信佇列。handler panic 會被接住並記 Error `panic recovered`（`msg=recordmq handler`），逐筆處理失敗另記 Warn `recordmq: handler failed`：整批 panic 視為整批失敗、退回逐筆，逐筆 panic 視為永久性錯誤直接進死信。暫停期間整個消費者停止取件：暫時性錯誤多半是下游 MySQL 故障，整體放慢才不會空轉。
 
-消費結果計入 `recordmq_consume_total{result}`：`ok`（已寫入並 ack）、`retry`（暫時性失敗放回佇列）、`dead_letter`（壞格式、永久錯誤、連續失敗達上限或 handler panic，進 `<queue>.dead`）；序列事先建立。`dead_letter` 5 分鐘內有增加就觸發 `GameRecordConsumerDeadLetter`（page）：這些事件不會再寫進資料庫，需看 Warn `recordmq: handler failed` 確認原因，修好後把 `.dead` 的內容重送。消費端自己的連線中斷／建立失敗同樣以指數退避重連（1 秒倍增到 30 秒、抖動 ±30%，連上後歸零），Warn 附 `retryIn`；RabbitMQ 長時間故障時不再每秒一行，多個實例也不會同秒重撥。
+消費結果計入 `recordmq_consume_total{result}`：`ok`（已寫入並 ack）、`retry`（暫時性失敗放回佇列）、`dead_letter`（壞格式、永久錯誤、連續失敗達上限或 handler panic，進 `<queue>.dead`）；序列事先建立。`dead_letter` 5 分鐘內有增加就觸發 `GameRecordConsumerDeadLetter`（page）：這些事件不會再寫進資料庫，需看 Warn `recordmq: handler failed`（處理失敗）或 `recordmq: invalid event payload`（內容無法解析；欄位 `messageID`、`bodySHA`＝body SHA-256 前 6 位元組十六進位、`bodyLen`，不放內容）確認原因，修好後把 `.dead` 的內容重送。消費端自己的連線中斷／建立失敗同樣以指數退避重連（1 秒倍增到 30 秒、抖動 ±30%，連上後歸零），Warn 附 `retryIn`；RabbitMQ 長時間故障時不再每秒一行，多個實例也不會同秒重撥。
 
 失敗計數表記失敗次數與最後失敗時間，`depthTicker` 觸發時清掉超過 10 分鐘未再失敗的鍵（重排後被其他消費者取走或過期的事件不會永久殘留）。`Consumer.Close` 以 `CloseDeadline`（5 秒）關閉連線並連帶關閉 channel，與 `Publisher.Close` 一致：broker 半開或不回 close-ok 時不會卡到 AMQP 心跳判定斷線，Record 關機不會超過 `stop_grace_period`；未 ack 的投遞由 broker 重送。`recordmq_connection_status` 在消費端連線成功設為 1、`Close` 設為 0，`GameRecordMQDisconnected` 只看 `job="record"`。
 
