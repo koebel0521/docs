@@ -206,6 +206,10 @@ DROP INDEX idx_record_outbox_event_next_attempt_at ON record_outbox_event;
 DROP INDEX idx_record_outbox_event_lease_until ON record_outbox_event;
 -- World：player_lottery_entry_state 的 group_id 單欄索引（主鍵 (player_id, group_id, sub_id) 已涵蓋 player_id 前綴）
 DROP INDEX ix_player_lottery_entry_state_player_group ON player_lottery_entry_state;
+-- World：player_lottery_draw 的 (player_id, created_at) 索引（唯一查詢走 ux_player_lottery_draw_player_seed）
+DROP INDEX ix_player_lottery_draw_player_created ON player_lottery_draw;
+-- World：gm_grant_record 的 player_id 單欄索引（唯一查詢以主鍵 operation_id）；名稱先 SHOW INDEX FROM gm_grant_record 核對
+DROP INDEX idx_gm_grant_record_player_id ON gm_grant_record;
 -- Record：record_events 只留 idx_record_user_time（依玩家＋時間查詢）與 request_id、trace_id 索引。
 -- 要刪的 idx_record_type_time、idx_record_world_time、idx_record_source_time 不只在 record_events，
 -- 也在每張日分表 record_events_YYYYMMDD。先用下列查詢產生實際存在的語句，核對後再執行：
