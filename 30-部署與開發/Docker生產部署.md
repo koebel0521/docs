@@ -283,12 +283,27 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 
 ## 6. 更新版本
 
+手動升版的順序與 `scripts/ci-deploy.sh` 相同（CD 的實際指令見該腳本的 `preflight_config`、`publish_config`、`migrate`）。**設定 artifact 必須隨映像一起換版**：每個映像內嵌的 `release.json` 記錄本版的 `config_version`、`config_seq`、`client_contract`、`min_config_seq`，World 啟動時由 `pkg/release/verify.go` 的 `VerifyConfig` 比對 `current.json` 指向的 artifact；`client_contract` 與 `min_config_seq` 任何時候都要相符，非開發版另比對 `config_version` 與 `config_seq`，不符直接拒絕啟動。只換映像不發布設定，等於「新映像配舊 `current.json`」，World 起不來。
+
 1. build 新 tag
 2. push 新 tag
-3. 修改 `.env.prod` 內的：
-   - `IMAGE_TAG`
-   - `CENTRAL_IMAGE`／`WORLD_IMAGE`／`GATE_IMAGE`／`CHAT_IMAGE`／`LOBBY_IMAGE`／`RECORD_IMAGE`
-4. 重新部署：
+3. 記下目前的設定版本（回滾要切回它）：
+
+   ```bash
+   grep -o '"config_version"[^,]*' <DATA_CONFIG_ROOT>/current.json
+   ```
+
+4. 預檢並發布新設定 artifact（`-DryRun` 只驗來源與換版規則，不寫 `releases/`、不動 `current.json`；`-Source` 是本次 tag 對應的 `config/data`）：
+
+   ```powershell
+   .\scripts\publish-data-config.ps1 -DryRun -Source config\data -Root <DATA_CONFIG_ROOT>
+   .\scripts\publish-data-config.ps1 -Source config\data -Root <DATA_CONFIG_ROOT>
+   ```
+
+   沒有 PowerShell 的部署主機直接用 Go 工具，等同 CD 的 `publish_config`：`go run ./tools/pja configartifact -source config/data -root <DATA_CONFIG_ROOT>`（預檢加 `-dry-run`）。
+5. 執行 migration（見 [Docker發版流程](./Docker發版流程.md#3-建議-release-步驟)）
+6. 修改 `.env.prod` 內六個 `*_IMAGE`：`CENTRAL_IMAGE`／`WORLD_IMAGE`／`GATE_IMAGE`／`CHAT_IMAGE`／`LOBBY_IMAGE`／`RECORD_IMAGE`。compose 只讀這六個，**不讀 `IMAGE_TAG`**；`IMAGE_TAG` 只被 `ci-deploy.sh` 用來記錄上一版
+7. 重新部署：
 
 ```bash
 docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
@@ -298,16 +313,29 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 
 ## 7. 回滾
 
-如果新版本有問題：
+如果新版本有問題，**映像與設定要一起退回**。舊映像內嵌的 `config_version`／`config_seq` 是舊版的值，`current.json` 若仍指向新發布的 artifact，舊版 World 會因 `VerifyConfig` 不符拒絕啟動，回滾本身就失敗。順序與 `ci-deploy.sh` 的 `rollback()` 相同：
 
-1. 把 `.env.prod` 的 image tag 改回上一版
-2. 再執行一次：
+1. 停服務（避免舊映像在 `current.json` 切換途中熱重載）：
+
+   ```bash
+   docker compose --env-file .env.prod -f docker/compose/compose.prod.yml stop central world gate chat lobby record
+   ```
+
+2. 把 `current.json` 切回升版前記下的 `config_version`（40 碼小寫 SHA；release 不可變，隨時可切回；不可直接改寫 `current.json`）：
+
+   ```powershell
+   .\scripts\rollback-data-config-release.ps1 -Root <DATA_CONFIG_ROOT> -Version <上一版 config_version>
+   ```
+
+   或 `go run ./tools/pja configartifact -root <DATA_CONFIG_ROOT> -switch-version <上一版 config_version>`（等同 CD 的 `switch_config`）。
+3. 把 `.env.prod` 的六個 `*_IMAGE` 改回上一版（compose 不讀 `IMAGE_TAG`，只改它無效）
+4. 再執行一次：
 
 ```bash
 docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d
 ```
 
-因為 compose 以 image tag 為主，所以 rollback 的核心就是把 tag 指回上一個穩定版本。
+回滾只切換映像與設定，不還原資料庫（schema 只往前，見[Docker發版流程](./Docker發版流程.md#7-rollback-規則)）。
 
 ## 8. 目前邊界
 

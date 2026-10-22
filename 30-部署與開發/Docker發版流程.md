@@ -47,11 +47,14 @@
 3. build image
 4. push image
 5. 完成 MySQL backup / snapshot
-6. 執行一次性的 `deps/PJA-Database/scripts/migrate-prod.sh`
-7. 確認 migration 成功後更新 deploy 主機上的 `.env.prod`
-8. 執行 production deploy：同一次發版的所有服務整批替換，不可新舊發版混跑（服務之間的 `ServiceHello` 比對發版身分，不一致會斷線，見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md#服務之間)）
-9. 跑 production smoke test
-10. 若失敗則只 rollback server image，保留已向前的 database schema
+6. 發布設定 artifact：`.\scripts\publish-data-config.ps1 -Source config\data -Root <DATA_CONFIG_ROOT>`（先加 `-DryRun` 預檢；等同 `go run ./tools/pja configartifact -source config/data -root <DATA_CONFIG_ROOT>`）。先記下發布前 `current.json` 的 `config_version`，回滾要切回它。World 啟動以 `pkg/release/verify.go` 比對映像內嵌的 `config_version`／`config_seq` 與 `current.json` 指向的 artifact，不符拒絕啟動，所以設定與映像必須同版
+7. 執行一次性的 `deps/PJA-Database/scripts/migrate-prod.sh`
+8. 確認 migration 成功後更新 deploy 主機上的 `.env.prod`
+9. 執行 production deploy：同一次發版的所有服務整批替換，不可新舊發版混跑（服務之間的 `ServiceHello` 比對發版身分，不一致會斷線，見 [版本握手與強制更新](../10-核心流程/版本握手與強制更新.md#服務之間)）
+10. 跑 production smoke test
+11. 若失敗則 rollback server image **並把 `current.json` 切回上一版 `config_version`**（見第 7 節），保留已向前的 database schema
+
+以上順序即 `scripts/ci-deploy.sh` 的 CD 流程（備份、預檢、關服、再備份、發布設定、migration、換映像、等健康）；手動升版時不可漏掉發布設定這步。
 
 ### 使用 helper script
 
@@ -93,7 +96,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 
 release 完成後，deploy 主機至少要更新：
 
-- `.env.prod` 內的 `IMAGE_TAG`
+- `.env.prod` 內的 `IMAGE_TAG`（compose 不讀它；只有 `scripts/ci-deploy.sh` 用來記錄上一版，手動部署以下列六個 `*_IMAGE` 為準）
 - `.env.prod` 內的：
   - `CENTRAL_IMAGE`
   - `WORLD_IMAGE`
@@ -154,12 +157,14 @@ powershell -ExecutionPolicy Bypass -File ./scripts/production-smoke.ps1 -CheckMo
 
 若 deploy 後 smoke test 失敗或服務異常：
 
-1. 將 `.env.prod` 的 image tag 改回上一版
-2. 重新執行 deploy
-3. 不要對 production 執行 migration rollback
-4. 若資料也出問題，依 [[Docker備份還原]] 從已驗證的 backup/snapshot restore，並先隔離流量
+1. 停服務（`docker compose ... stop central world gate chat lobby record`）
+2. 把 `current.json` 切回升版前記下的 `config_version`：`.\scripts\rollback-data-config-release.ps1 -Root <DATA_CONFIG_ROOT> -Version <40 碼 SHA>`（等同 `go run ./tools/pja configartifact -root <DATA_CONFIG_ROOT> -switch-version <SHA>`）。舊映像內嵌舊版 `config_version`／`config_seq`，`current.json` 仍指向新 artifact 時 World 會拒絕啟動（`pkg/release/verify.go`），回滾本身會失敗
+3. 將 `.env.prod` 的六個 `*_IMAGE` 改回上一版（compose 不讀 `IMAGE_TAG`）
+4. 重新執行 deploy
+5. 不要對 production 執行 migration rollback
+6. 若資料也出問題，依 [[Docker備份還原]] 從已驗證的 backup/snapshot restore，並先隔離流量
 
-rollback 範例：
+rollback 範例（`IMAGE_TAG` 僅作紀錄，實際生效的是六個 `*_IMAGE`）：
 
 ```text
 IMAGE_TAG=0.9.9
