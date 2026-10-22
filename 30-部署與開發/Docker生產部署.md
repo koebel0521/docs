@@ -225,7 +225,7 @@ GROUP BY table_name, index_name;
 
 ### 部署前的 migration 預檢（preflight_migrate）
 
-`ci-deploy.sh` 在**關服之前**執行 `preflight_migrate`（`scripts/lib/migrate.sh`）：用與正式 migration 同一組旗標（`-dir`、`-environment`、`-timeout`、`-lock-timeout`，值取自 `.env.prod` 的 `MIGRATION_*`）跑 `datamigrate -mode validate`，只驗旗標與 plan 版本鏈，**不連資料庫、不帶 `MYSQL_DSN`**。`MIGRATION_TIMEOUT` 這類值寫錯、`MIGRATION_PLAN_DIR` 不是已存在的宿主機絕對路徑，都在這裡失敗，服務尚未停止；以前要到停服、備份、發布設定之後才失敗，造成停機加回滾。不帶 DSN 也避免旗標錯誤時 datamigrate 印出預設值（`-mysql` 預設取 `MYSQL_DSN`）而把含密碼的 DSN 寫進 CI log。手動執行 `migrate-prod.sh` 前可先照後端交接手冊的 `datamigrate -mode validate` 自行預檢。
+`ci-deploy.sh` 在**關服之前**執行 `preflight_migrate`（`scripts/lib/migrate.sh`）：用與正式 migration 同一組旗標（`-dir`、`-environment`、`-timeout`、`-lock-timeout`，值取自 `.env.prod` 的 `MIGRATION_*`）跑 `datamigrate -mode validate`，只驗旗標與 plan 版本鏈，**不連資料庫、不帶 `MYSQL_DSN`**。`MIGRATION_TIMEOUT` 這類值寫錯、`MIGRATION_PLAN_DIR` 不是已存在的宿主機絕對路徑，都在這裡失敗，服務尚未停止；以前要到停服、備份、發布設定之後才失敗，造成停機加回滾。不帶 DSN 也避免旗標錯誤時 datamigrate 印出預設值（`-mysql` 預設取 `MYSQL_DSN`）而把含密碼的 DSN 寫進 CI log。`MYSQL_DSN` 現在也在關服前預檢：缺值、鍵名打錯或仍是 `change_me` 佔位值，`ci-deploy.sh` 在關服前就失敗並只印鍵名（不印值）。手動執行 `migrate-prod.sh` **不接受任何參數**（內層固定 `-mode apply -confirm`，帶 `-mode validate` 會被拒絕而不是預檢）；要預檢請直接呼叫 `datamigrate -mode validate`（見後端交接手冊）。
 
 ### 連線池設定
 
