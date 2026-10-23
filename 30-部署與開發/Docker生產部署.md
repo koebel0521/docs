@@ -413,3 +413,11 @@ release / version 流程請參考 [[Docker發版流程]]。
 版本保留與回收條件請參考 [版本回收策略.md](./版本回收策略.md)。
 
 灰度回退點請參考 [灰度回退點.md](./灰度回退點.md)。
+
+## 第十九輪補充（2026-10-23）
+
+- combat 快照寫入（`combatstore/snapshot.go`）改用 `INSERT ... VALUES ... AS new ON DUPLICATE KEY UPDATE`，需要 MySQL 8.0.19 以上（正式環境已釘 8.4）。
+- `game_board_command_total{result="aborted"}` 為關機中止的盤面指令，不計入 error；`world minute audit panic recovered`、`gate audit panic recovered` 為稽核專屬 panic 標籤（`game_panic_recovered_total`）。
+- Lobby admin／gm 日誌帳號改記 `accountHash`（`accountrule.LogHash`，與 Central 共用）；查帳號要先算雜湊。
+- Gate、Chat、Record 的必要依賴（Redis、journal 後援、歷史／事件 store）缺少時啟動失敗；Gate `/diag/*` 全部走 basic auth。
+- 腳本：`get-failed-pipeline-logs.ps1` 不再有 `-Token` 參數（用 `GITLAB_API_TOKEN` 或互動輸入）；覆蓋率分片以 covdata 合併。
