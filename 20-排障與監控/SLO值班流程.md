@@ -19,8 +19,8 @@
 | 私人工具 | 等價的版控內做法 |
 |------|------|
 | `dephealth`（readiness、queue 深度） | `curl -s localhost:<埠>/ready`；`curl -s localhost:<埠>/metrics \| grep -E 'game_event_queue_depth\|game_msg_queue_dropped_total'`；或 Grafana／Prometheus 的對應面板 |
-| `opsdiag`（readiness、路由查核、關鍵 metrics） | 各服務 `/ready`；Gate `curl -s -u "$DEBUG_PPROF_BASIC_AUTH" "localhost:6061/diag/session?playerID=<id>"`、`/diag/player?playerID=<id>`（Gate `/diag/*` 與 pprof 一樣走 basic auth，帳密為 `.env.prod` 的 `DEBUG_PPROF_BASIC_AUTH`，值為 `user:pass`）；PromQL 看 SLO 面板 |
-| `protocoldiag` | `curl -s localhost:<埠>/diag/protocol`（Central、Gate、World） |
+| `opsdiag`（readiness、路由查核、關鍵 metrics） | 各服務 `/ready`；Gate `curl -s -u "$DEBUG_PPROF_BASIC_AUTH" "localhost:6061/diag/session?playerID=<id>"`、`/diag/player?playerID=<id>`（Gate `/diag/session`、`/diag/player` 與 pprof 一樣走 basic auth，帳密為 `.env.prod` 的 `DEBUG_PPROF_BASIC_AUTH`，值為 `user:pass`）；PromQL 看 SLO 面板 |
+| `protocoldiag` | `curl -s localhost:<埠>/diag/protocol`（Central、Gate、World；不需 basic auth） |
 | `supportdiag`／`playersnapshot` | Gate `/diag/player`、`/diag/session`（同樣要 `-u`）；Redis `GET player:{playerID}`（登入狀態快照 JSON） |
 | `staterepair`／`datasurgeon` | 沒有等價的版控內工具；修 Redis 衍生資料前先備份（[[Docker備份還原]]），依 [Redis 鍵值結構](../90-參考附件/Redis鍵值結構.md) 手動處理，或請持有私人工具的人執行 |
 
