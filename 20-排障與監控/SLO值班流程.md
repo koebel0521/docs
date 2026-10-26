@@ -65,7 +65,7 @@
 
 | 告警 | 等級 | 說明 |
 | --- | --- | --- |
-| `GameLoginAvailabilityLow` | warning | 登入可用率低於 99%，先看 login outcomes 與 handler latency |
+| `GameLoginAvailabilityLow` | warning | 登入可用率低於 99%，先看 login outcomes 與 handler latency；`client_closed`（玩家自己斷線）不算失敗也不進分母，`session_expired` 只代表 pending 逾時 |
 | `GameLoginCentralBusy` | warning | Central 登入併發滿載而拒絕登入，先看開服／大批重連尖峰與 bcrypt 併發 |
 | `GameLogoutAvailabilityLow` | warning | 登出可用率低於 99%，先看 logout outcomes 與 replay cache |
 | `TCPReconnectSuccessLow` | warning | {{ $labels.instance }} 連 {{ $labels.service }} 的 S2S 重連成功率低於 99%，先看 reconnect outcomes 與 socket queue overflow |
