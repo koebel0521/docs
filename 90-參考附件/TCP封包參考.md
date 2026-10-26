@@ -369,6 +369,6 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 ### 日誌
 
 - `socket close`（Info；debug 等級另含呼叫鏈 `callers`）、`connect`／`disconnect`（Info，含 key 與位址）
-- `send queue overflow, closing socket`、`event queue overflow, closing socket`、`rate limit exceeded, closing connection`、`unknown message dropped`（Warn）
+- `send queue overflow, closing socket`、`event queue overflow, closing socket (sampled)`、`rate limit exceeded, closing connection (sampled)`（兩個 `(sampled)` 日誌每 10 秒取樣一行，事件佇列溢位的實際次數看 `game_event_queue_overflow_total{action="closed"}`）、`unknown message dropped`（Warn）
 - `S2S authentication rejected`、`S2S node reconnected, closing its previous connection`（Warn）、`service hello mismatch, closing socket`、`service hello timeout, closing socket`、`message before service hello, closing socket`（Error）
 - `dialing`、`dial error`（client）、`accept error, retrying`（server）
