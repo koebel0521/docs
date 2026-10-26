@@ -134,7 +134,7 @@ Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分�
 
 `AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列結構變更需在升級前由外部 migration 建立（PJA-Database 尚無 plan，`deps/PJA-Database/migrations/` 只有 README，暫以 SQL 手動執行）。
 
-基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：新表（`player_gold_adjustment` 等，缺表時 `requireTables` 會直接讓啟動失敗）、2026-10-05 `bd968ff43` 起整數欄位由無號改有號、戰鬥相關表（`combat_*`、`wallet_ledger`）的重新設計。
+基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：新表（`player_gold_adjustment` 等，缺表時 `requireTables` 會直接讓啟動失敗）、戰鬥相關表（`combat_*`、`wallet_ledger`）的重新設計。2026-10-05 `bd968ff43` 起整數欄位由無號改有號**不在此列：AutoMigrate 不改有號／無號，必須執行下方「整數欄位由無號改有號」的 SQL**。
 
 ```sql
 -- Chat：歷史保留清理依 created_at 掃描
@@ -159,7 +159,7 @@ ALTER TABLE player_board_state ADD COLUMN combat_pending boolean NOT NULL DEFAUL
 ALTER TABLE player_mission_state ADD COLUMN eligible_at datetime(3) NULL;
 
 -- World：combat_session 依玩家、狀態與到期時間查詢；status 需先改成 varchar(32) 才能建索引
-ALTER TABLE combat_session MODIFY status varchar(32) NOT NULL;
+ALTER TABLE combat_session MODIFY status varchar(32);
 CREATE INDEX idx_combat_session_attacker_status ON combat_session (attacker_player_id, status, expires_at);
 CREATE INDEX idx_combat_session_defender_status ON combat_session (defender_player_id, status, expires_at);
 
@@ -202,12 +202,13 @@ ALTER TABLE player_mission_event ADD INDEX idx_player_mission_event_applied_at (
 -- 移除無查詢使用的次要索引（4c7139993，2026-10-22）。這些索引不影響正確性，只讓每筆寫入多維護索引項；
 -- AutoMigrate 不會刪舊索引，既有庫要自己 DROP（可在離峰執行，也可延後）。
 -- **索引名由 gorm 預設命名規則（idx_<表>_<欄>）推得，部署前先 SHOW INDEX FROM <表> 核對實際名稱再執行，不存在就略過。**
--- World：record_outbox_event 的 next_attempt_at、lease_until 單欄索引（領取走 idx_record_outbox_due，租約只在 UPDATE 寫入）
+-- World：record_outbox_event 的 sent_at、next_attempt_at、lease_until 單欄索引（領取走 idx_record_outbox_due，sent_at 是它的第一欄，租約只在 UPDATE 寫入）
+DROP INDEX idx_record_outbox_event_sent_at ON record_outbox_event;
 DROP INDEX idx_record_outbox_event_next_attempt_at ON record_outbox_event;
 DROP INDEX idx_record_outbox_event_lease_until ON record_outbox_event;
 -- World：player_lottery_entry_state 的 group_id 單欄索引（主鍵 (player_id, group_id, sub_id) 已涵蓋 player_id 前綴）
 DROP INDEX ix_player_lottery_entry_state_player_group ON player_lottery_entry_state;
--- World：player_lottery_draw 的 (player_id, created_at) 索引（唯一查詢走 ux_player_lottery_draw_player_seed）
+-- World：player_lottery_draw 的 (player_id, created_at) 索引（唯一查詢走 ix_player_lottery_draw_player_seed）
 DROP INDEX ix_player_lottery_draw_player_created ON player_lottery_draw;
 -- World：gm_grant_record 的 player_id 單欄索引（唯一查詢以主鍵 operation_id）；名稱先 SHOW INDEX FROM gm_grant_record 核對
 DROP INDEX idx_gm_grant_record_player_id ON gm_grant_record;
@@ -223,6 +224,43 @@ GROUP BY table_name, index_name;
 ```
 
 日分表只會由 Record 補建「新的」表，既有分表的索引不會被改；新建的日分表（模型已拿掉這三個索引）從此不再帶它們，所以只需處理既有表，保留期內的舊分表隨 `record_table` 保留期清理自然消失，嫌麻煩也可只處理 `record_events` 與最近幾天的分表。
+
+#### 整數欄位由無號改有號（bd968ff43，2026-10-05）
+
+**AutoMigrate 不會改有號／無號。** GORM 用 information_schema 的 `data_type` 比對型別，這個欄位不含 `unsigned`，兩邊都是 `bigint`，判為同型別，永遠不 ALTER。所以 2026-10-05 13:08（+08）以前由 AutoMigrate 建立、之後照本文件升級的庫（文件基準點 `5d6cef1ed` 即屬此類），仍會留下 `int`／`bigint unsigned` 欄位（實測基準庫升級後 World 54 欄、Central 2 欄、Chat 3 欄）。
+
+影響（sql_mode 含 `STRICT_TRANS_TABLES`，MySQL 8.4 預設）：
+
+- `combat_session.random_seed` 是均勻亂數 int32，約一半是負數，寫入回 `Error 1264 Out of range value`，升級庫上約一半的開始戰鬥會失敗（`IsDataRejection` 為真，不觸發斷路器，但玩家開不了戰）。
+- 盤面拓撲遷移會把 `player_effect.source_id` 暫改成負數，同樣回 1264，有研究科技對應的盤面拓撲遷移都會失敗。
+
+全新庫與在有號化之後才建立的庫（含本機 dev 庫）不受影響。**正式庫是否在範圍內，部署前先確認建庫時間，並用下面第 1 步的查詢核對。**
+
+對 World、Central、Chat 各自的庫分別執行：
+
+1. 先列出殘留的無號整數欄位，數量為 0 就不需要處理：
+
+```sql
+SELECT table_name, column_name, column_type
+FROM information_schema.columns
+WHERE table_schema = DATABASE() AND column_type LIKE '%unsigned' AND data_type IN ('int', 'bigint')
+ORDER BY table_name, ordinal_position;
+```
+
+2. 以產生器產出 `ALTER ... MODIFY` 語句，**核對後**再執行（轉換只挑 `int`／`bigint`；`source_type`、`algorithm_version`、`status` 這些 `tinyint`／`smallint unsigned` 是 model 刻意保留的無號型別，不能轉）：
+
+```sql
+SELECT CONCAT('ALTER TABLE `', table_name, '` MODIFY `', column_name, '` ', REPLACE(column_type, ' unsigned', ''),
+  IF(is_nullable = 'NO', ' NOT NULL', ' NULL'),
+  IF(column_default IS NULL, '', CONCAT(' DEFAULT ', QUOTE(column_default))),
+  IF(extra LIKE '%auto_increment%', ' AUTO_INCREMENT', ''), ';')
+FROM information_schema.columns
+WHERE table_schema = DATABASE() AND column_type LIKE '%unsigned' AND data_type IN ('int', 'bigint')
+ORDER BY table_name, ordinal_position;
+```
+
+3. 這些是修改欄位型別的 DDL，大表會重建，先在複本確認耗時，並排在維護時段。
+4. 執行後重跑第 1 步，結果應為空；再與全新 AutoMigrate 建的庫比對 `information_schema.columns`，欄位型別差異應歸零（三個基準庫已實測歸零）。
 
 `PlayerMissionEvent.PlayerID` 已加 `index:idx_player_mission_event_player`，新庫由 AutoMigrate 自動建。PJA-Database 開發期 `migrations/` 為空、表由 AutoMigrate 建立，所以沒有在上游加 migration；`config_version` 不變。MySQL 8.0 拋棄式容器、20 萬列的 `EXPLAIN`：加索引前 `type=ALL` 預估 219,139 列，加索引後 `type=range`、`key=idx_player_mission_event_player` 預估 200 列。壓測庫的 `player_mission_event` 有 1513 萬列，屬須先手動 `ALTER` 的既有大庫。
 
