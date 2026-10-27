@@ -67,6 +67,7 @@
 | --- | --- | --- |
 | `GameLoginAvailabilityLow` | warning | 登入可用率低於 99%，先看 login outcomes 與 handler latency；`client_closed`（玩家自己斷線）不算失敗也不進分母，`session_expired` 只代表 pending 逾時 |
 | `GameLoginCentralBusy` | warning | Central 登入併發滿載而拒絕登入，先看開服／大批重連尖峰與 bcrypt 併發 |
+| `GameLoginGateUnavailable` | warning | Gate 持續回 service_unavailable（`reason` 為 `ban_check_failed` 或 `no_central`），ban_check_failed 先看 Redis，no_central 先看 Central 連線 |
 | `GameLogoutAvailabilityLow` | warning | 登出可用率低於 99%，先看 logout outcomes 與 replay cache（登出 pending 期間的重送已改計 `game_request_ignored_total{flow="logout",cause="duplicate_pending"}`，不在此分母內） |
 | `TCPReconnectSuccessLow` | warning | {{ $labels.instance }} 連 {{ $labels.service }} 的 S2S 重連成功率低於 99%，先看 reconnect outcomes 與 socket queue overflow |
 | `GameLoginFailureRatioHigh` | warning | 5 分鐘內登入失敗率超過 10% |
