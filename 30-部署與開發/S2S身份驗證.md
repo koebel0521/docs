@@ -116,7 +116,7 @@ Central 的 `s2s_auth.chat`、`s2s_auth.lobby` 監聽區段與 `world` 相同格
 
 清單是 JSON 物件，例如 `{"2001":"sha256:<64位十六進位摘要>"}`；其中角括號部分須換成真實摘要。不得填入原始 token。原始 token 長度限制為 43 至 256 位元組，須用安全亂數產生器。憑證 DNS SAN 必須包含客戶端的 `server_name`；TCP 使用內部 IP 也能以名稱驗證，不能關閉驗證。各鍵可用大寫環境變數覆寫，例如 `S2S_AUTH_WORLD_SERVER_NAME`。
 
-各監聽區段可設定 `allowed_cidrs`，例如 `["10.1.2.3/32", "fd00::1/128"]`。只有刻意寫 `[]`（或未設定）才代表不限制來源；寫成 map、list-of-map 或 `[""]` 這類無法解成字串清單的型別，啟動會直接失敗，不會靜默變成不限制；正式範本（`docker/prod/config/central.yaml`、`chat.yaml`、`world.yaml`）已限制為 compose 網段 `172.30.0.0/24`（須與 `PROD_NETWORK_SUBNET` 一致）。依真實 TCP 來源 IP 在 TLS 前檢查，不信任轉發標頭；修改需重啟對應接收端。Docker、NAT 應填接收端實際看到的來源。IP 限制不能取代 token 驗證。驗證啟用而 `allowed_cidrs` 為空時，每個監聽區段（service）啟動時各記一次 Warn（欄位 `listener`），訊息只說來源 IP 不受限、僅靠 token 驗證，不提 mTLS 或客戶端憑證（實作沒有客戶端憑證）；Central 的 gate／world／chat／lobby 四段都空時會看到四筆。
+各監聽區段可設定 `allowed_cidrs`，例如 `["10.1.2.3/32", "fd00::1/128"]`。只有刻意寫 `[]`（或未設定）才代表不限制來源；寫成 map、list-of-map 或 `[""]` 這類無法解成字串清單的型別，啟動會直接失敗，不會靜默變成不限制；正式範本（`docker/prod/config/central.yaml`、`chat.yaml`、`world.yaml`）已限制為 compose 網段 `172.30.0.0/24`（須與 `PROD_NETWORK_SUBNET` 一致）。依真實 TCP 來源 IP 在 TLS 前檢查，不信任轉發標頭；修改需重啟對應接收端。Docker、NAT 應填接收端實際看到的來源。IP 限制不能取代 token 驗證。驗證啟用而 `allowed_cidrs` 為空時，每個監聽區段（service）啟動時各記一次 Warn（欄位 `listener`，訊息原文 `S2S allowed_cidrs is empty: source IP is not restricted, only token authenticates peers`），訊息只說來源 IP 不受限、僅靠 token 驗證，不提 mTLS 或客戶端憑證（實作沒有客戶端憑證）；Central 的 gate／world／chat／lobby 四段都空時會看到四筆。
 
 ## Docker 開發
 
