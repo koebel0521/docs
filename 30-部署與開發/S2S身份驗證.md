@@ -15,7 +15,7 @@
 
 接收端授權檔只保存 `sha256:` 加上 64 位十六進位 SHA-256 摘要。呼叫端持有原始 token，透過 TLS 傳送；接收端計算摘要並固定時間比較。摘要不能直接當作 bearer token 登入。
 
-`config/dev`、`config/docker` 預設 `s2s_auth.enabled: false`，維持開發流程；正式設定 `docker/prod/config` 一律啟用，機密由 `.env.prod` 的 `S2S_SECRET_DIR` 掛載。啟用時 Central、Gate、World、Chat、Lobby 都必須設定 `s2s_auth.enabled: true`，或 `S2S_AUTH_ENABLED=true`。已啟用程序須具備所有必要連線機密；Gate 僅在設定 Chat dial 時要求 Chat token。驗證失敗不退回明文，錯誤開關值、**漏設 `s2s_auth.enabled`**、缺失機密或明文授權清單都會回傳啟動錯誤；開發環境要停用必須明確設 `false`。
+`config/dev`、`config/docker` 預設 `s2s_auth.enabled: false`，維持開發流程；正式設定 `docker/prod/config` 一律啟用，機密由 `.env.prod` 的 `S2S_SECRET_DIR` 掛載。啟用時 Central、Gate、World、Chat、Lobby 都必須設定 `s2s_auth.enabled: true`，或 `S2S_AUTH_ENABLED=true`。`s2s_auth.enabled` 走 `bootstrap.Bool`：YAML 整數 `1`／`0` 一律拒絕（不會被當字串靜默停用驗證），字串 `"true"`／`"false"` 可接受且容許前後空白。已啟用程序須具備所有必要連線機密；Gate 僅在設定 Chat dial 時要求 Chat token。驗證失敗不退回明文，錯誤開關值、**漏設 `s2s_auth.enabled`**、缺失機密或明文授權清單都會回傳啟動錯誤；開發環境要停用必須明確設 `false`。
 
 ## 連線規則
 
