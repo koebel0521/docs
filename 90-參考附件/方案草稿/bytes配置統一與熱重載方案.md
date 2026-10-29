@@ -615,7 +615,7 @@ Variable reload 至少需要：
 
 ### Phase 2：安全 artifact 發布
 
-狀態：已實作。使用 `go run ./tools/pja configartifact -source config/data -root config/data` 發布；工具會先驗證完整 tables，再建立 `releases/<config-sha>/`、寫入 `checksums.json`，最後才原子更新 `current.json`。`schema_hash` 由編譯進 binary 的 `generated/GameConfigs.go` 內容計算，生成 code 改變時舊 artifact 會被拒絕。
+狀態：已實作。使用 `go run ./tools/pja configartifact -source config/data -root config/data` 發布（`config/data/releases/` 與 `current.json` 是本機發布狀態，已 `.gitignore`，不進版控）；工具會先驗證完整 tables，再建立 `releases/<config-sha>/`、寫入 `checksums.json`，最後才原子更新 `current.json`。`schema_hash` 由編譯進 binary 的 `generated/GameConfigs.go` 內容計算，生成 code 改變時舊 artifact 會被拒絕。
 
 World 預設要求 `current.json`，避免執行期直接讀取正在同步的 raw bytes。只有配置明確設定 `data_config.allow_legacy_directory: true` 時才保留 legacy 目錄讀取，僅供本機開發與 Docker 範例使用。
 

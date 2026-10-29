@@ -10,7 +10,7 @@
 2. 選擇能代表實際生產工作量的不同情境，新增最小必要的 benchmark。不得只改名稱、資料大小或參數，重複既有情境。
 3. 遵守專案格式規範，執行相關 benchmark，使用適當的 `go test -bench`、`-benchmem` 等選項，確認成功並記錄有效結果。
 4. 根據數據使用 CPU 或記憶體 profile 找出主要成本，實作最小且有證據支持的效能調整。不要只憑猜測微優化。
-5. 以相同機器、Go 版本、benchmark 與參數重跑：修改前與修改後各以 `-count=10` 量測（`check-perf-commit-msg.sh` 要求 n≥10，`-count=6` 會被擋），並用 `go tool -modfile=tools/gotools/go.mod benchstat` 比較 `ns/op`、`B/op`、`allocs/op`；benchstat 顯示 `~`（無顯著差異）時不得宣稱改善、也不保留該修改。確認結果正確且改善可重複，才保留調整；若無改善、結果不穩定或找不到明確瓶頸，撤回本輪效能調整，但保留有價值的 benchmark，並如實回報。
+5. 以相同機器、Go 版本、benchmark 與參數（含 `-pgo=default.pgo`，並註明機器負載）重跑；時間雜訊大時只宣稱配置（`B/op`、`allocs/op`）：修改前與修改後各以 `-count=10` 量測（`check-perf-commit-msg.sh` 要求 n≥10，`-count=6` 會被擋），並用 `go tool -modfile=tools/gotools/go.mod benchstat` 比較 `ns/op`、`B/op`、`allocs/op`；benchstat 顯示 `~`（無顯著差異）時不得宣稱改善、也不保留該修改。確認結果正確且改善可重複，才保留調整；若無改善、結果不穩定或找不到明確瓶頸，撤回本輪效能調整，但保留有價值的 benchmark，並如實回報。
 6. 檢查本輪 diff 與 `git diff --check`，確認只含本輪必要的 benchmark 與經驗證的效能調整；不可新增一般單元測試。Benchmark 如需驗證輸出，只加入必要檢查。
 7. 以中文 Conventional Commit 建立一個 commit，且每輪恰好一個 commit；效能宣稱（含配置量）須用 `perf:` 前綴，內文附 goos、cpu 與 benchstat 輸出，格式見 `AGENTS.md` 第 9 行；同一 commit 包含本輪 benchmark 與保留的效能調整。
 8. 推送該 commit 至目前分支的對應遠端分支。
