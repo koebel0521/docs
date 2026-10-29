@@ -18,7 +18,8 @@
 
 執行限制：
 - 不要重複盤點整個專案或 CI。只檢查足以判斷 benchmark 是否重複，以及 pipeline 是否會執行該 benchmark 的相關範圍。
-- 新 benchmark 所在的套件必須同步加入 `bench/packages.txt`，且同時列入 `bench/pending-baseline.txt`（基準檔尚無該套件段落時只示警；漏列會讓 `ci-bench-pkgs-check.sh` 失敗）（lint job 的 `scripts/ci-bench-pkgs-check.sh` 要求有 Benchmark 的目錄一定列入清單，否則 lint 失敗）；除此之外若 pipeline 仍不會執行新增 benchmark，明確記錄此事，不要擴大修改範圍去調整 CI。慣例見 `docs/30-部署與開發/開發規則.md` 的「Benchmark 與 PGO」段。
+- 在**已有基準段落**的套件新增 benchmark 時，不要把套件行加進 pending（`ci-bench-pkgs-check.sh` 反而會示警可移除）；改把 benchmark 名稱（以 `Benchmark` 開頭的行）加進 `bench/pending-baseline.txt` 的名稱段，或跑 `ci-bench-names-check.sh --record`。
+- 新 benchmark 所在的**新套件**必須同步加入 `bench/packages.txt`，且同時列入 `bench/pending-baseline.txt`（基準檔尚無該套件段落時只示警；漏列會讓 `ci-bench-pkgs-check.sh` 失敗）（lint job 的 `scripts/ci-bench-pkgs-check.sh` 要求有 Benchmark 的目錄一定列入清單，否則 lint 失敗）；除此之外若 pipeline 仍不會執行新增 benchmark，明確記錄此事，不要擴大修改範圍去調整 CI。慣例見 `docs/30-部署與開發/開發規則.md` 的「Benchmark 與 PGO」段。
 - 若找不到有價值且尚未覆蓋的情境，立即停止；不要為了達到 N 次製造變更。回報已完成次數與停止原因。
 - 只有同一情境、相同環境與參數下取得可重複的前後比較，才能宣稱效能改善；分別回報 `ns/op`、`B/op`、`allocs/op` 的變化。
 - 保留工作區既有變更，只 stage 本輪新增或修改的必要檔案；不得把其他人的變更帶進 commit。
