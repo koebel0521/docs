@@ -97,7 +97,7 @@ type Msg interface {
 
 ### PackTo 快速路徑
 
-`Socket.handleOutgoing` 對實作 `PackTo` 的訊息：在 socket 自有的 `sendBuf` 前預留 6 byte，呼叫 `PackTo` 後用 `WriteFramePrebuilt` 寫出，省掉 `Pack()` 的配置與一次 payload 複製。`sendBuf` 只由 sendLoop 使用，容量超過 `maxRetainedSendBuf`（64KB）時不保留。沒有 `PackTo` 的訊息走 `Pack()` + `WriteFrame`。
+`Socket.handleOutgoing` 對實作 `PackTo` 的訊息：在 socket 自有的 `sendBuf` 前預留 6 byte，呼叫 `PackTo` 後用 `WriteFramePrebuilt` 寫出，省掉 `Pack()` 的配置與一次 payload 複製。`sendBuf` 只由 sendLoop 使用，容量超過 `maxRetainedSendBuf`（64KB）時不保留。沒有 `PackTo` 的訊息走 `Pack()` + `WriteFrame`。預序列化訊息（`msg.OwnedRaw`、`tcpsocket.packedMsg`）只實作 `Payload()`，`handleOutgoing` 先斷言 `prepackedMsg` 直接 writev，不經 `PackTo`／sendBuf；`PackTo` 已從這兩型別刪除。
 
 ### 預序列化訊息（writev 路徑）
 
