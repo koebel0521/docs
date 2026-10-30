@@ -132,7 +132,7 @@ Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分�
 
 #### 舊庫的盤面子表外鍵
 
-專案所有關聯都在應用層，沒有外鍵。舊庫的 `player_board_road_star`、`player_board_building` 可能還帶指向 `player_board_state` 的外鍵；World 只在 AutoMigrate 路徑（`gamedb_connect.go` 的 `dropLegacyBoardForeignKeys`）移除它們。`AUTO_MIGRATE_DISABLED=true` 的正式環境不會執行這段，也沒有 migration plan 處理，所以從舊庫升級前要手動移除：
+專案所有關聯都在應用層，沒有外鍵：`openGorm` 統一設 `DisableForeignKeyConstraintWhenMigrating=true`，AutoMigrate 不會自動建外鍵（不必每個關聯欄位記得加 `gorm:"-"`）。舊庫的 `player_board_road_star`、`player_board_building` 可能還帶指向 `player_board_state` 的外鍵；World 只在 AutoMigrate 路徑（`gamedb_connect.go` 的 `dropLegacyBoardForeignKeys`）移除它們。`AUTO_MIGRATE_DISABLED=true` 的正式環境不會執行這段，也沒有 migration plan 處理，所以從舊庫升級前要手動移除：
 
 ```sql
 -- 先查約束名，再逐一 DROP（只刪外鍵，不動索引）
