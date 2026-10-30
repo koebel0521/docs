@@ -60,7 +60,7 @@
 | 30001–30013 | S2S 登入登出鏈 | `LoginGateToCentral = 30001`、`LoginRejectedGateToCentral = 30012`、`LogoutBatchCentralToWorld = 30013` |
 | 30101–30105 | S2S 連線 | `ConnectInfo = 30101`、`HeartbeatReq = 30102`、`HeartbeatRes = 30103`、`TimeSync = 30104`、`ServiceHello = 30105` |
 | 30201–30202 | S2S 聊天 | `ChatSystem`、`ChatDeliverBatch = 30202` |
-| 30301–30304 | S2S 轉發 | `ForwardToWorld`、`SyncUsersGateToCentral`、`ClientBoardCommand`、`BoardClientEvent` |
+| 30301–30304 | S2S 轉發 | `ForwardToWorld`（Central 處理器已於 2026-10-30 刪除，無發送端，僅保留協定定義）、`SyncUsersGateToCentral`、`ClientBoardCommand`、`BoardClientEvent` |
 | 30401–30402 | S2S 對帳 | `AuditSnapshotRequest`、`AuditSnapshotResponse` |
 | 30403–30405 | 頻道（已停用） | `ChannelBroadcast`、`ChannelMembershipUpdate`、`ChannelMembershipSnapshot`；Go 端已無發送與接收，定義待下次升版移除 |
 | 30501–30502 | S2S 帳號保留 | `AccountRetentionRequest`、`AccountRetentionResponse` |
