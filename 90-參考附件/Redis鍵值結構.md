@@ -63,15 +63,17 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
+2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.GateValidateJournal*` 保留供維運工具清除舊鍵。
+
 每筆紀錄的完整 key 為「前綴:{scope}:{requestID}」（scope 為帳號或 playerID），值為 String（JSON）。
 
 | Key 前綴 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-| `requestjournal:central:login` | String | Central | 2 min（`requestjournalredis.ReplayTTL`） | 登入請求去重（scope 為帳號；各 Central 共用） |
-| `requestjournal:central:logout` | String | Central | 2 min（`requestjournalredis.ReplayTTL`） | 登出請求去重（各 Central 共用） |
-| `requestjournal:gate:{gateID}:validate` | String | Gate | 2 min（`requestjournalredis.ReplayTTL`） | 恢復驗證請求去重 |
-| `requestjournal:world:{worldID}:login` | String | World | 2 min（`requestjournalredis.ReplayTTL`） | 登入請求去重 |
-| `requestjournal:world:{worldID}:logout` | String | World | 2 min | 登出請求去重 |
+| ~~`requestjournal:central:login`~~ | String | Central | — | 已刪除（2026-10-30）：登入請求去重（scope 為帳號；各 Central 共用） |
+| ~~`requestjournal:central:logout`~~ | String | Central | — | 已刪除（2026-10-30）：登出請求去重（各 Central 共用） |
+| ~~`requestjournal:gate:{gateID}:validate`~~ | String | Gate | — | 已刪除（2026-10-30）：恢復驗證請求去重 |
+| ~~`requestjournal:world:{worldID}:login`~~ | String | World | — | 已刪除（2026-10-30）：登入請求去重 |
+| ~~`requestjournal:world:{worldID}:logout`~~ | String | World | — | 已刪除（2026-10-30）：登出請求去重 |
 | ~~`requestjournal:world:{worldID}:validate`~~ | — | World | — | 已停用：World 恢復驗證去重只存本機（requestID 由本行程以時間單調產生，重啟後不重複），不寫 Redis |
 | `requestjournal:world:{worldID}:roll` | String | World | 2 min | 擲骰請求的完整回應，供重送時原樣回傳；值為 `0x00` ＋ 二進位（2 byte 大端 MessageID ＋ payload），讀取相容舊版 JSON |
 | `requestjournal:world:{worldID}:upgrade` | String | World | 2 min | 建築升級請求的完整回應；編碼同 `:roll` |
