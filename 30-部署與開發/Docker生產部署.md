@@ -130,6 +130,21 @@ AUTO_MIGRATE_DISABLED=true
 
 Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表，寫入前改查該日分表是否存在：存在（外部工具已預建）就放行並記入快取，之後不再查；不存在才回暫時性錯誤（`record table ... does not exist and AUTO_MIGRATE_DISABLED=true`），消費端退避重試，外部工具建好後自動恢復，不會直接進死信。正式 compose 預設仍只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，由 Record 自己補建。Record 只**補建不存在的**事件分表（啟動時預建最近 31 天與明天，每小時檢查一次，每張建表另有 30 秒期限），既有分表不再跑 `AutoMigrate`：模型改了也不會自動 ALTER 正式庫的大表，既有分表的結構變更一律走 PJA-Database plan（行為變更）。
 
+#### 舊庫的盤面子表外鍵
+
+專案所有關聯都在應用層，沒有外鍵。舊庫的 `player_board_road_star`、`player_board_building` 可能還帶指向 `player_board_state` 的外鍵；World 只在 AutoMigrate 路徑（`gamedb_connect.go` 的 `dropLegacyBoardForeignKeys`）移除它們。`AUTO_MIGRATE_DISABLED=true` 的正式環境不會執行這段，也沒有 migration plan 處理，所以從舊庫升級前要手動移除：
+
+```sql
+-- 先查約束名，再逐一 DROP（只刪外鍵，不動索引）
+SELECT TABLE_NAME, CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+  AND TABLE_NAME IN ('player_board_road_star', 'player_board_building');
+ALTER TABLE `player_board_road_star` DROP FOREIGN KEY `<約束名>`;
+ALTER TABLE `player_board_building` DROP FOREIGN KEY `<約束名>`;
+```
+
+全新建立的正式庫不需要這一步，但仍需先由 baseline migration 建表（PJA-Database 尚無 plan）。
+
 #### 升級時需手動建立的索引與欄位變更
 
 `AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列結構變更需在升級前由外部 migration 建立（PJA-Database 尚無 plan，`deps/PJA-Database/migrations/` 只有 README，暫以 SQL 手動執行）。
