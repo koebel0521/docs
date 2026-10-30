@@ -12,6 +12,8 @@ Publish 回傳成功 / 錯誤
 
 `PublishWithDeferredConfirmWithContext` 成功只代表訊息已寫入連線；publisher confirm 才代表 RabbitMQ 已接受該訊息。發布端會等待 confirm，收到 `nack`、channel 關閉或 context 取消時回傳錯誤並增加發布錯誤指標。
 
+發布端只宣告 exchange（`exchange`／`exchange_type`），不宣告佇列也不綁定；佇列與綁定鍵（`rabbitmq.binding_key`，舊名 `routing_key` 保留一版相容）由 Record 消費端宣告。發布一律帶 `mandatory`，並以 `NotifyReturn` 接收退回：broker 對無法路由的訊息會先回 return 再回 ack，發布端在 confirm 到達後認領退回通知，視為發布失敗（Record 尚未啟動、佇列不存在時事件不會被 broker 確認後靜默遺失，一般事件記 Warn 丟棄，outbox 事件留在 outbox 依退避重試）。空事件類型在 `Begin` 回 `ErrPermanent`，不再備援到綁定鍵。
+
 Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，解析失敗會 NACK 並丟棄壞訊息。兩者用途不同：publisher confirm 保護 `World → RabbitMQ`，consumer ACK 保護 `RabbitMQ → Record`。
 
 ## 目前的發布路徑
