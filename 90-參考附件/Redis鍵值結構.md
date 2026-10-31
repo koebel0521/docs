@@ -46,7 +46,8 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-| `central:routing:{playerID}` | Hash | Central | 24 小時（`RoutingTTL`，寫入刷新；登出刪除） | 路由表：欄位 `gate`、`world`、`account`、`seq`（登入序號，`Store` 比序號擋舊資料回寫、`DeleteIfGate/IfWorld` 比序號相等才刪；舊資料無此欄位視為 0） |
+| `central:routing:{playerID}` | Hash | Central | 24 小時（`RoutingTTL`，寫入刷新；登出刪除） | 路由表：欄位 `gate`、`world`、`account`、`seq`（登入序號，由 Redis 配發（`storeScript` 內的 `central:loginseq` 計數器），不再是時鐘微秒；`Store` 比序號擋舊資料回寫、`DeleteIfGate/IfWorld` 比序號相等才刪；舊資料無此欄位視為 0；序號未知（0）的補回遇到已有 seq 的路由會被略過，計入 `game_routing_store_skipped_total{reason="stale_seq"}`；滾動部署期間新舊版序號體系不可混比） |
+| `central:loginseq` | String（計數器） | Central | 無 TTL | 全域登入序號計數器，`storeScript` 內 `INCR` 配發路由 `seq` |
 | `central:account:{account}` | Hash | Central | 7 天（`AccountCacheTTL`） | 帳號快取：欄位 `uid`、`wid`、`hash`（passwordHash） |
 | `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token。取鎖的用戶端逾時（`DeadlineExceeded`）不代表 `SET NX PX` 沒在 Redis 執行，鎖可能已以本次 token 寫入卻沒人會解；逾時時會用脫離取消的 ctx 對同一 token 補一次 `Unlock`（比對 token，不會誤刪別人的鎖），同帳號登入不必等滿 15 秒。登入取鎖後以 `LoginAccountLockHold`（`redisLockTTL` 減 5 秒）作為處理期限，逾時即中止，不讓鎖在流程中途過期 |
 | `central:world:drain` | Set | Lobby (admin) | 排空期間 | 排空中的 World ID 集合 |
@@ -63,7 +64,7 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.LegacyGateValidateJournalPattern` 保留（只供 `tools/private` 的 staterepair 清殘留）。
+2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.LegacyGateValidateJournalPattern` 符號已刪（舊鍵最多存活 2 分鐘，自行過期）。
 
 每筆紀錄的完整 key 為「前綴:{scope}:{requestID}」（scope 為帳號或 playerID），值為 String（JSON）。
 
