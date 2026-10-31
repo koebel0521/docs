@@ -159,7 +159,7 @@ type ServiceHandler interface {
 }
 ```
 
-各服務 handler 實作它：`Init` 註冊訊息，`Connect`／`Disconnect` 處理連線事件。`s2shandshake.ConnectInfoOnConnect` 可嵌入作為 S2S 的 `Connect` 預設實作。`OwnerBase` 自己不再匯出 `Connect`／`Disconnect`／`Init`（第十輪改為未匯出的 `connect`／`disconnect`／`initHandlers`，由 `ServeConn` 與生命週期在適當時機轉呼叫 `ServiceHandler`）：匯出會經嵌入提升成 `Client`／`Server` 的公開方法，讓外部繞過 `ServeConn` 的收尾。`OwnerBase.MarkClosed` 仍匯出，只因 `tcpclient`、`tcpserver` 的測試要在特定時點單獨觸發旗標；正式碼請用 `CloseRuntime`。
+各服務 handler 實作它：`Init` 註冊訊息，`Connect`／`Disconnect` 處理連線事件。`s2shandshake.ConnectInfoOnConnect` 可嵌入作為 S2S 的 `Connect` 預設實作。`OwnerBase` 自己不再匯出 `Connect`／`Disconnect`／`Init`（第十輪改為未匯出的 `connect`／`disconnect`／`initHandlers`，由 `ServeConn` 與生命週期在適當時機轉呼叫 `ServiceHandler`）：匯出會經嵌入提升成 `Client`／`Server` 的公開方法，讓外部繞過 `ServeConn` 的收尾。測試要在特定時點單獨觸發關閉旗標時用 `OwnerBase.MarkClosedForTest`（內部是未匯出的 `markClosed`）；正式碼請用 `CloseRuntime`。
 
 ### 註冊 handler
 
