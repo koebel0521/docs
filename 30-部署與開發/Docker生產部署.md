@@ -85,6 +85,7 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - Central 有設定 Redis（`redis.addr` 或 `redis.master_name` 任一非空）卻在啟動時連不上，直接拒絕啟動，不再靜默降級成單機記憶體模式；兩者皆空時，只有開發環境或明確設 `redis.single_node: true`（預設 false，configaudit 認列）才走單機記憶體模式；非 dev 缺 Redis 又沒設 `single_node` 會拒絕啟動。路由登入序號改由 Redis 配發（`central:loginseq`），滾動部署期間新舊版序號體系不可混比：Central 升級請整批換，不要新舊 Central 同時寫同一份路由。正式 compose 的 `central` 因此 `depends_on` `redis`（`service_healthy`）。
 - **Docker Compose 最低版本 v2.24**：`scripts/production-smoke.ps1` 以 `docker compose config --environment` 讀 `.env.prod` 的值，該旗標從 v2.24 才有；舊版會回非 0，腳本直接中止並提示升級，不會再靜默讀成空值（空的 `GRAFANA_ADMIN_PASSWORD` 會讓煙霧測試以 401 誤判失敗）。部署主機請先 `docker compose version` 確認。
 - **容器硬化（`x-app` 共用段）**：應用容器設 `read_only: true`（根檔案系統唯讀）、`tmpfs: [/tmp]`（暫存寫入）與 `pids_limit: 512`（行程／執行緒數上限，擋 fork 失控）。World 的 `/app/spill` 是具名資料卷，不受唯讀影響。**未在 staging 驗證**：首次部署前先在 staging 確認 healthcheck、`GOTRACEBACK` 堆疊輸出與各服務寫檔（日誌、spill、debug 暫存）沒有因唯讀根檔案系統失敗；有問題就把該路徑加進 `tmpfs` 或 volume，不要拿掉 `read_only`。
+- `DEBUG_PPROF_BASIC_AUTH` 為空或仍是範本佔位值（含 `change_me`／`change-me`）時，`ci-deploy.sh` 在關服前就失敗（`preflight_secrets`），不會停服後才發現 pprof 與 Gate `/diag/*` 一律 503。
 - `RECORD_HTTP_TOKEN`（選填）：Record 的 `/events` 預設只綁容器內 `127.0.0.1:6070`；`/events` 對未知或重複參數、`limit` 不在 1..500、未知 `view` 回 400，token 驗證失敗 5 次後回 429（每 12 秒補 1 次額度）；要從其他主機查詢而在 `docker/prod/config/record.yaml` 設 `addr` 時**必須**同時提供 token，否則 Record 拒絕啟動（`checkHTTPToken`）。compose 把 `.env.prod` 的 `RECORD_HTTP_TOKEN` 以環境變數 `HTTP_TOKEN` 轉傳給 Record；`.env.prod.example` 的選填段列有此項，留空等同未設定。
 - 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
@@ -390,7 +391,7 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
 
 ## 6. 更新版本
 
-手動升版的順序與 `scripts/ci-deploy.sh` 相同（CD 的實際指令見該腳本的 `preflight_config`、`publish_config`、`migrate`）。**設定 artifact 必須隨映像一起換版**：每個映像內嵌的 `release.json` 記錄本版的 `config_version`、`config_seq`、`client_contract`、`min_config_seq`，World 啟動時由 `pkg/release/verify.go` 的 `VerifyConfig` 比對 `current.json` 指向的 artifact；`client_contract` 與 `min_config_seq` 任何時候都要相符，非開發版另比對 `config_version` 與 `config_seq`，不符直接拒絕啟動。只換映像不發布設定，等於「新映像配舊 `current.json`」，World 起不來。
+手動升版的順序以 `scripts/ci-deploy.sh` 為準：停服前備份與預檢 → 停六服務 → 停服後備份 → 發布設定 → migrate → 換映像 → up，與下面「回滾」先停服務的順序一致，手動步驟只是它的展開（CD 的實際指令見該腳本的 `preflight_config`、`publish_config`、`migrate`）。**設定 artifact 必須隨映像一起換版**：每個映像內嵌的 `release.json` 記錄本版的 `config_version`、`config_seq`、`client_contract`、`min_config_seq`，World 啟動時由 `pkg/release/verify.go` 的 `VerifyConfig` 比對 `current.json` 指向的 artifact；`client_contract` 與 `min_config_seq` 任何時候都要相符，非開發版另比對 `config_version` 與 `config_seq`，不符直接拒絕啟動。只換映像不發布設定，等於「新映像配舊 `current.json`」，World 起不來。
 
 1. build 新 tag
 2. push 新 tag
@@ -400,17 +401,24 @@ docker compose --env-file .env.prod -f docker/compose/compose.prod.yml logs --ta
    grep -o '"config_version"[^,]*' <DATA_CONFIG_ROOT>/current.json
    ```
 
-4. 預檢並發布新設定 artifact（`-DryRun` 只驗來源與換版規則，不寫 `releases/`、不動 `current.json`；`-Source` 是本次 tag 對應的 `config/data`）：
+4. 停服前預檢：備份 MySQL（`./scripts/docker-backup-mysql.sh`），並預檢新設定 artifact（`-DryRun` 只驗來源與換版規則，不寫 `releases/`、不動 `current.json`；`-Source` 是本次 tag 對應的 `config/data`）：
 
    ```powershell
    .\scripts\publish-data-config.ps1 -DryRun -Source config\data -Root <DATA_CONFIG_ROOT>
+   ```
+
+5. 停六個服務（避免舊映像在 `current.json` 切換與 migration 途中熱重載或寫入）：`docker compose --env-file .env.prod -f docker/compose/compose.prod.yml stop central world gate chat lobby record`
+6. 停服後再備份一次 MySQL（`./scripts/docker-backup-mysql.sh`），這份才是 migration 前一致的還原點
+7. 發布新設定 artifact（去掉 `-DryRun`）：
+
+   ```powershell
    .\scripts\publish-data-config.ps1 -Source config\data -Root <DATA_CONFIG_ROOT>
    ```
 
    沒有 PowerShell 的部署主機直接用 Go 工具，等同 CD 的 `publish_config`：`go run ./tools/pja configartifact -source config/data -root <DATA_CONFIG_ROOT>`（預檢加 `-dry-run`）。
-5. 執行 migration（見 [Docker發版流程](./Docker發版流程.md#3-建議-release-步驟)）
-6. 修改 `.env.prod` 內六個 `*_IMAGE`：`CENTRAL_IMAGE`／`WORLD_IMAGE`／`GATE_IMAGE`／`CHAT_IMAGE`／`LOBBY_IMAGE`／`RECORD_IMAGE`。compose 只讀這六個，**不讀 `IMAGE_TAG`**；`IMAGE_TAG` 只被 `ci-deploy.sh` 用來記錄上一版
-7. 重新部署：
+8. 執行 migration（見 [Docker發版流程](./Docker發版流程.md#3-建議-release-步驟)）
+9. 修改 `.env.prod` 內六個 `*_IMAGE`：`CENTRAL_IMAGE`／`WORLD_IMAGE`／`GATE_IMAGE`／`CHAT_IMAGE`／`LOBBY_IMAGE`／`RECORD_IMAGE`。compose 只讀這六個，**不讀 `IMAGE_TAG`**；`IMAGE_TAG` 只被 `ci-deploy.sh` 用來記錄上一版
+10. 起服務：
 
 ```bash
 docker compose --env-file .env.prod -f docker/compose/compose.prod.yml up -d

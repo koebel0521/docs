@@ -17,6 +17,10 @@
 - `prometheus`
 - `grafana`
 
+## 專案名與具名卷
+
+full、core-test、monitoring 各有獨立的 compose 專案名與容器名前綴：`project-full`（容器 `project-full-*`）、`project-core-test`（`project-core-test-*`）、`project-monitoring`（`project-monitoring-*`），三者可同機並存，不再互相改建服務或共用 MySQL 卷。具名卷也隨專案名改為 `project-*_*`（原本是 `compose_*`）：舊的堆疊需先 `down`，舊卷（`compose_*`）自行清除（`docker volume ls` 確認後 `docker volume rm`）。`configaudit` 的 `checkComposeProjectNames` 守門專案名與 `container_name` 全域唯一、前綴符合專案名（deps 沿用 `project-dev-` 前綴列為例外）。
+
 ## 使用流程
 
 ## World 資料檔
@@ -129,7 +133,7 @@ Grafana 預設帳密：
 `user` 是互動式 client。啟動後可直接 attach：
 
 ```bash
-docker attach project-user
+docker attach project-full-user
 ```
 
 目前最小可用指令是：
@@ -154,11 +158,11 @@ Ctrl-p Ctrl-q
 測完登入後，可分別看各服務 log：
 
 ```bash
-docker logs project-user --tail 100
-docker logs project-gate --tail 100
-docker logs project-central --tail 100
-docker logs project-world --tail 100
-docker logs project-record --tail 100
+docker logs project-full-user --tail 100
+docker logs project-full-gate --tail 100
+docker logs project-full-central --tail 100
+docker logs project-full-world --tail 100
+docker logs project-full-record --tail 100
 ```
 
 你應該能看到：

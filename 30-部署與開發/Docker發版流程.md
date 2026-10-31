@@ -46,7 +46,7 @@
 2. `go run ./tools/pja releasemanifest verify` 驗證 server/config/schema/protocol 對應（含 migration plan 規則：redis `rename_prefix` 前後綴不可互相包含、`kind` 只允許 `rename_prefix`、`from`／`to` 必填、mysql 與 redis 不可混在同一個 plan）；需先 `git submodule update --init`（migration 目錄不存在時 `generate`／`verify` 都會報錯，不會當成沒有 schema）；`config/data/version.json` 以 `dataconfig.LoadManifest` 載入並驗證（40 字元 SHA、`luban_version`、`config_version` 等必填），`{}` 或缺欄位直接報錯，不再因空檔略過比對；`release.json` 以原子寫入，中斷不留截斷檔
 3. build image
 4. push image
-5. 完成 MySQL backup / snapshot
+5. 停服前完成 MySQL backup / snapshot 並預檢；停六個服務後（`compose stop` 六服務）再備份一次（以 `scripts/ci-deploy.sh` 的順序為準：停服前備份 → 預檢 → 停服 → 停服後備份 → 發布 → migrate → 換映像 → up）
 6. 發布設定 artifact：`.\scripts\publish-data-config.ps1 -Source config\data -Root <DATA_CONFIG_ROOT>`（先加 `-DryRun` 預檢；等同 `go run ./tools/pja configartifact -source config/data -root <DATA_CONFIG_ROOT>`）。先記下發布前 `current.json` 的 `config_version`，回滾要切回它。World 啟動以 `pkg/release/verify.go` 比對映像內嵌的 `config_version`／`config_seq` 與 `current.json` 指向的 artifact，不符拒絕啟動，所以設定與映像必須同版
 7. 執行一次性的 `deps/PJA-Database/scripts/migrate-prod.sh`
 8. 確認 migration 成功後更新 deploy 主機上的 `.env.prod`

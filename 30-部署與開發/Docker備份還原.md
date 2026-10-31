@@ -79,6 +79,7 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 
 注意：
 
+- 還原前先把現況備份到 `PRE_RESTORE_BACKUP_DIR`（預設 `~/pja-backups/redis-pre-restore`）；確定不需要時用 `SKIP_PRE_RESTORE_BACKUP=1` 略過；Redis 未啟動時備份失敗會中止還原
 - 腳本會先 `stop redis`
 - 清空 Redis data volume 後再展開備份
 - 還原完成後再把 Redis 起回來

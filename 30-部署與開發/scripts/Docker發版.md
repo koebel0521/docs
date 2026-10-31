@@ -8,7 +8,7 @@
 
 ## 流程
 1. 檢查 upgrade window lock。
-2. 檢查 change approval stamp。
+2. 檢查 change approval stamp（須綁定目前 `HEAD`、未過期，發版成功後作廢；舊格式不接受）。
 3. 工作樹有未提交修改（含未追蹤檔，`pkg/release/release.json` 除外）就拒絕發版：映像以工作樹（`COPY . .`）建置，但 `release.json` 與 trace 記的是 `HEAD`，內容會對不上 `server_commit`。
 4. 以 `go run ./tools/pja releasemanifest generate`／`verify`（傳入完整 `HEAD` SHA，`verify` 加 `-config-repo deps/PJA-Config`，與 CI `release-info` 一致）產生並驗證 `pkg/release/release.json`（結束後還原開發版）；`config_version` 不是 `deps/PJA-Config` 子模組指標或其祖先（不可追溯）就失敗。
 5. 跑 `docker-build-images.sh`。
@@ -19,6 +19,7 @@
 ## 主要參數
 - 第一個位置參數：`image-tag`
 - 第二個位置參數：`registry`，可省略（預設取環境變數 `REGISTRY`，再沒有則 `registry.example.com/project`）
+- 環境變數 `ALLOW_OVERWRITE_TAG=1`：registry 已有同名 tag 時預設拒絕（會覆蓋已發出的映像），明確要覆蓋才設
 - 環境變數 `UPGRADE_WINDOW_LOCK`（預設 `.run/upgrade-window.lock`）、`CHANGE_APPROVAL_FILE`（預設 `.run/change-approval/current.txt`）：覆寫升級窗口鎖與變更審批戳記的位置
 
 ## 相關文件
