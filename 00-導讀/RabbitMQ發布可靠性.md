@@ -12,7 +12,7 @@ Publish 回傳成功 / 錯誤
 
 `PublishWithDeferredConfirmWithContext` 成功只代表訊息已寫入連線；publisher confirm 才代表 RabbitMQ 已接受該訊息。發布端會等待 confirm，收到 `nack`、channel 關閉或 context 取消時回傳錯誤並增加發布錯誤指標。
 
-發布端只宣告 exchange（`exchange`／`exchange_type`），不宣告佇列也不綁定；佇列與綁定鍵（`rabbitmq.binding_key`，舊名 `routing_key` 保留一版相容）由 Record 消費端宣告。發布一律帶 `mandatory`，並以 `NotifyReturn` 接收退回：broker 對無法路由的訊息會先回 return 再回 ack，發布端在 confirm 到達後認領退回通知，視為發布失敗（Record 尚未啟動、佇列不存在時事件不會被 broker 確認後靜默遺失，一般事件記 Warn 丟棄，outbox 事件留在 outbox 依退避重試）。空事件類型在 `Begin` 回 `ErrPermanent`，不再備援到綁定鍵。
+發布端只宣告 exchange（`exchange`／`exchange_type`），不宣告佇列也不綁定；佇列與綁定鍵（`rabbitmq.binding_key`，舊名 `routing_key` 保留一版相容）由 Record 消費端宣告。發布一律帶 `mandatory`，並以 `NotifyReturn` 接收退回：broker 對無法路由的訊息會先回 return 再回 ack，發布端在 confirm 到達後認領退回通知，視為發布失敗，計入 `recordmq_publish_error_total{reason="returned"}`（Record 尚未啟動、佇列不存在時事件不會被 broker 確認後靜默遺失，一般事件記 Warn 丟棄，outbox 事件留在 outbox 依退避重試）。認領機制：每筆發布從 `Publisher` 的原子計數器取一個唯一序號，放進訊息 header `x-publish-seq`（broker 退回時 header 原樣帶回），送出前先 `register` 到目前這組連線與 channel（`amqpLink`）的 `pending` 表；每個 `amqpLink` 各有一把 `returnMu`，保護「排空退回通知並記到對應序號」與「讀取這筆是否被退回」在同一個臨界區，等待者 A 不會讀走 B 的退回而讓 B 排空到空 channel 誤判成功；confirm 到達後以 `wasReturned(seq)` 查結果，成功、逾時、取消、nack 都 `release` 刪除登記（順手排空，避免沒人等待時 256 筆緩衝塞滿而卡住連線 reader），不在表內的退回通知（等待者已放棄）直接丟棄。重連會換上新的 `amqpLink`（新的 `pending` 與退回 channel），舊連線上尚未認領的退回隨舊 link 丟棄，那些等待中的發布因 channel 關閉本來就回錯誤。空事件類型在 `Begin` 回 `ErrPermanent`，不再備援到綁定鍵。
 
 Record 消費端則使用手動 ACK：事件成功交給 handler 後才 ACK，解析失敗會 NACK 並丟棄壞訊息。兩者用途不同：publisher confirm 保護 `World → RabbitMQ`，consumer ACK 保護 `RabbitMQ → Record`。
 
