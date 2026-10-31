@@ -64,7 +64,7 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.LegacyGateValidateJournalPattern` 符號已刪（舊鍵最多存活 2 分鐘，自行過期）。
+2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.LegacyGateValidateJournalPattern`（已刪）符號不再存在（舊鍵最多存活 2 分鐘，自行過期）。
 
 每筆紀錄的完整 key 為「前綴:{scope}:{requestID}」（scope 為帳號或 playerID），值為 String（JSON）。
 
