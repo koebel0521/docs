@@ -85,7 +85,7 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 - Central 有設定 Redis（`redis.addr` 或 `redis.master_name` 任一非空）卻在啟動時連不上，直接拒絕啟動，不再靜默降級成單機記憶體模式；兩者皆空時，只有開發環境或明確設 `redis.single_node: true`（預設 false，configaudit 認列）才走單機記憶體模式；非 dev 缺 Redis 又沒設 `single_node` 會拒絕啟動。路由登入序號改由 Redis 配發（`central:loginseq`），滾動部署期間新舊版序號體系不可混比：Central 升級請整批換，不要新舊 Central 同時寫同一份路由。正式 compose 的 `central` 因此 `depends_on` `redis`（`service_healthy`）。
 - **Docker Compose 最低版本 v2.24**：`scripts/production-smoke.ps1` 以 `docker compose config --environment` 讀 `.env.prod` 的值，該旗標從 v2.24 才有；舊版會回非 0，腳本直接中止並提示升級，不會再靜默讀成空值（空的 `GRAFANA_ADMIN_PASSWORD` 會讓煙霧測試以 401 誤判失敗）。部署主機請先 `docker compose version` 確認。
 - **容器硬化（`x-app` 共用段）**：應用容器設 `read_only: true`（根檔案系統唯讀）、`tmpfs: [/tmp]`（暫存寫入）與 `pids_limit: 512`（行程／執行緒數上限，擋 fork 失控）。World 的 `/app/spill` 是具名資料卷，不受唯讀影響。**未在 staging 驗證**：首次部署前先在 staging 確認 healthcheck、`GOTRACEBACK` 堆疊輸出與各服務寫檔（日誌、spill、debug 暫存）沒有因唯讀根檔案系統失敗；有問題就把該路徑加進 `tmpfs` 或 volume，不要拿掉 `read_only`。
-- `RECORD_HTTP_TOKEN`（選填）：Record 的 `/events` 預設只綁容器內 `127.0.0.1:6070`；要從其他主機查詢而在 `docker/prod/config/record.yaml` 設 `addr` 時**必須**同時提供 token，否則 Record 拒絕啟動（`checkHTTPToken`）。compose 把 `.env.prod` 的 `RECORD_HTTP_TOKEN` 以環境變數 `HTTP_TOKEN` 轉傳給 Record；`.env.prod.example` 的選填段列有此項，留空等同未設定。
+- `RECORD_HTTP_TOKEN`（選填）：Record 的 `/events` 預設只綁容器內 `127.0.0.1:6070`；`/events` 對未知或重複參數、`limit` 不在 1..500、未知 `view` 回 400，token 驗證失敗 5 次後回 429（每 12 秒補 1 次額度）；要從其他主機查詢而在 `docker/prod/config/record.yaml` 設 `addr` 時**必須**同時提供 token，否則 Record 拒絕啟動（`checkHTTPToken`）。compose 把 `.env.prod` 的 `RECORD_HTTP_TOKEN` 以環境變數 `HTTP_TOKEN` 轉傳給 Record；`.env.prod.example` 的選填段列有此項，留空等同未設定。
 - 服務映像為必填（`${X_IMAGE:?}`），未設定時 compose 直接報錯，不會退回 `:latest`。
 - Lobby admin token 只由環境變數提供；三個 token 都空白時 admin 端點停用，`change-me` 開頭的佔位值會拒絕啟動。admin 端點預設監聽容器內 `127.0.0.1:8081`，需要從內網存取時以 `LOBBY_ADMIN_ADDR` 綁內網介面。
 - 只有 Gate `62001` 與 Lobby `8080` 對外。Lobby `:8080` 同時連線上限 2048、每個來源 IP（IPv6 以 /64 計）每秒 20 個請求、突發 40，超過回 429；每個請求 3 秒處理期限（唯讀 GET／HEAD 逾時回 503；寫入型請求只設 ctx 期限，不由中介層回 503，GM 重試仍須帶 `operationID`）；公開 listener（Lobby、Record `/events`）的 keep-alive 閒置上限 5 秒。Central／World／Chat 的 S2S 連接埠與 Prometheus、Grafana 只綁主機 `127.0.0.1`；監控經 SSH 通道或反向代理存取，Prometheus 不開 lifecycle API。跨主機部署時改綁內網介面。
@@ -235,16 +235,19 @@ DROP INDEX ix_player_lottery_entry_state_player_group ON player_lottery_entry_st
 DROP INDEX ix_player_lottery_draw_player_created ON player_lottery_draw;
 -- World：gm_grant_record 的 player_id 單欄索引（唯一查詢以主鍵 operation_id）；名稱先 SHOW INDEX FROM gm_grant_record 核對
 DROP INDEX idx_gm_grant_record_player_id ON gm_grant_record;
--- Record：record_events 只留 idx_record_user_time（依玩家＋時間查詢）與 request_id、trace_id 索引。
+-- Record：record_events 只留 idx_record_user_time（依玩家＋時間查詢）。request_id、trace_id 兩個索引（idx_record_request_id、idx_record_trace_id）無查詢使用，新分表也不再建立；既有表的處理見本段末的 DROP INDEX 產生語句。
 -- 要刪的 idx_record_type_time、idx_record_world_time、idx_record_source_time 不只在 record_events，
 -- 也在每張日分表 record_events_YYYYMMDD。先用下列查詢產生實際存在的語句，核對後再執行：
 SELECT CONCAT('ALTER TABLE `', table_name, '` DROP INDEX `', index_name, '`;') AS stmt
 FROM information_schema.statistics
 WHERE table_schema = DATABASE()
   AND table_name REGEXP '^record_events(_[0-9]{8})?$'
-  AND index_name IN ('idx_record_type_time', 'idx_record_world_time', 'idx_record_source_time')
+  AND index_name IN ('idx_record_type_time', 'idx_record_world_time', 'idx_record_source_time',
+                     'idx_record_request_id', 'idx_record_trace_id')
 GROUP BY table_name, index_name;
 ```
+
+新分表不再建立 `idx_record_request_id`、`idx_record_trace_id`；既有表需手動移除（`DROP INDEX` 會依序處理 `record_events` 與每張 `record_events_YYYYMMDD`，上面的查詢已涵蓋這兩個索引）。單表手動語句為 `ALTER TABLE record_events_YYYYMMDD DROP INDEX idx_record_request_id, DROP INDEX idx_record_trace_id;`；也可以迴圈 `information_schema.tables LIKE 'record_events_%'` 逐表執行。
 
 日分表只會由 Record 補建「新的」表，既有分表的索引不會被改；新建的日分表（模型已拿掉這三個索引）從此不再帶它們，所以只需處理既有表，保留期內的舊分表隨 `record_table` 保留期清理自然消失，嫌麻煩也可只處理 `record_events` 與最近幾天的分表。
 
