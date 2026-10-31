@@ -2,7 +2,7 @@
 
 `cmd/world/internal/app` 是 World 的狀態核心，不直接持有 Redis client。
 
-- App 只認窄介面：玩家狀態用 `playerstore.Store`；常駐玩家遊戲資料只透過 `playerDataStore`（卸載、離線卸載掃描、關機寫回與落地四類方法，`users_types.go`）使用，其餘玩家資料操作由組合根直接交給用到它的元件，App 不經手。`gamestore.Store` 大介面與 `Coordinator.gameStore` 已刪（2026-10-31）；`App.PlayerData()` 只供組合根確認 App 與 `services.Options.GameStore` 是同一個實例（`services.GameStore` 由消費端組合小介面，唯一正式實作是 `*gamestore.Memory`）。
+- App 只認窄介面：玩家狀態用 `playerstore.Store`；常駐玩家遊戲資料只透過 `playerDataStore`（卸載、離線卸載掃描、關機寫回與落地四類方法，`users_types.go`）使用，其餘玩家資料操作由組合根直接交給用到它的元件，App 不經手。已刪（2026-10-31）的舊名 `gamestore.Store` 大介面與舊名 `Coordinator.gameStore`；`App.PlayerData()` 只供組合根確認 App 與 `services.Options.GameStore` 是同一個實例（`services.GameStore` 由消費端組合小介面，唯一正式實作是 `*gamestore.Memory`）。
 - App 不使用 Redis，也不持有或轉手 Redis client（`internal/app` 不再 import `pkg/redis`，由守門測試把關）：戰鬥候選索引在 `cmd/world/run.go` 的 `newCombatStores` 建立，GM 發放佇列由 `services` 以 `Options.Redis`（原 `DataConfigOptions`）取得。
 - request journal（2026-10-30 起只剩驗證、擲骰與建築升級三種，登入、登出 journal 已刪）的持久後援以 `cmd/world/internal/store/requestjournal` 的 `KV` 介面注入：組合根以 `requestjournal.NewRedisKV(client)` 包裝後傳給 `app.WithPersistentRequestJournals`（Redis 為必要依賴：缺少時啟動失敗或 panic，不再有傳 nil、只用本機快取的退路）；App 只認 `KV`，不知道背後是 Redis。
 - 玩家卸載後的清理以回呼注入：`WithRequiredPlayerForgetter()` 是無參數的旗標選項（宣告正式組合根必須綁定，`cmd/world/run.go` 建 App 時帶入）；回呼本身由 App 方法 `BindPlayerForgetter(forget)` 延遲綁定（變數服務晚於 App 才建好），由 `services.wireWorldCallbacks` 呼叫並傳入 `variables.ForgetPlayer`；旗標已宣告而未綁定就在第一次卸載玩家時 panic（不靜默略過、不在建構時失敗），由 `services_wire_callbacks_test.go` 守門（拿掉接線即失敗）；未宣告旗標（單元測試）時 nil 回呼略過。回呼指向 `variables.ForgetPlayer`（刪除變數服務的遷移記錄，見[玩家變數](./玩家變數.md)）；`EvictPlayerData` 與離線卸載成功後呼叫它，App 不直接依賴變數服務。
