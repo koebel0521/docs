@@ -472,5 +472,5 @@ release / version 流程請參考 [[Docker發版流程]]。
 - combat 快照寫入（`combatstore/snapshot.go`）改用 `INSERT ... VALUES ... AS new ON DUPLICATE KEY UPDATE`，需要 MySQL 8.0.19 以上（正式環境已釘 8.4）。
 - `game_board_command_total{result="aborted"}` 為關機中止的盤面指令，不計入 error；`world minute audit panic recovered`、`gate audit panic recovered` 為稽核專屬 panic 標籤（`game_panic_recovered_total`）。
 - Lobby admin／gm 的封禁日誌與 Central 啟動掃描未正規化帳號的日誌，帳號改記 `accountHash`（`accountrule.LogHash`，兩邊共用）；其餘日誌不記帳號。查帳號要先算雜湊。
-- Gate、Chat、Record 的必要依賴（Redis、journal 後援、歷史／事件 store）缺少時啟動失敗；Gate `/diag/session`、`/diag/player`、`/diag/reconcile` 走 basic auth（`/diag/protocol` 不受保護）。
+- Gate、Chat、Record 的必要依賴（Redis、歷史／事件 store）缺少時啟動失敗；Gate `/diag/session`、`/diag/player`、`/diag/reconcile` 走 basic auth（`/diag/protocol` 不受保護）。
 - 腳本：`get-failed-pipeline-logs.ps1` 不再有 `-Token` 參數（用 `GITLAB_API_TOKEN` 或互動輸入）；覆蓋率分片以 covdata 合併。
