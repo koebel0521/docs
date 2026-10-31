@@ -114,7 +114,7 @@ s2s_auth:
 
 Central 的 `s2s_auth.chat`、`s2s_auth.lobby` 監聽區段與 `world` 相同格式，授權清單分別為 `chat-tokens.json`、`lobby-tokens.json`。
 
-清單是 JSON 物件，例如 `{"2001":"sha256:<64位十六進位摘要>"}`；其中角括號部分須換成真實摘要。不得填入原始 token。原始 token 長度限制為 43 至 256 位元組，須用安全亂數產生器。憑證 DNS SAN 必須包含客戶端的 `server_name`；TCP 使用內部 IP 也能以名稱驗證，不能關閉驗證。各鍵可用大寫環境變數覆寫，例如 `S2S_AUTH_WORLD_SERVER_NAME`。
+清單是 JSON 物件，例如 `{"2001":"sha256:<64位十六進位摘要>"}`；其中角括號部分須換成真實摘要。不得填入原始 token。原始 token 長度限制為 43 至 256 位元組，須用安全亂數產生器。憑證 DNS SAN 必須包含客戶端的 `server_name`；TCP 使用內部 IP 也能以名稱驗證，不能關閉驗證。各鍵可用大寫環境變數覆寫（`.` 換成 `_`），例如 `s2s_auth.central.server_name`。
 
 各監聽區段可設定 `allowed_cidrs`，例如 `["10.1.2.3/32", "fd00::1/128"]`。只有刻意寫 `[]`（或未設定）才代表不限制來源；寫成 map、list-of-map 或 `[""]` 這類無法解成字串清單的型別，啟動會直接失敗，不會靜默變成不限制；正式範本（`docker/prod/config/central.yaml`、`chat.yaml`、`world.yaml`）已限制為 compose 網段 `172.30.0.0/24`（須與 `PROD_NETWORK_SUBNET` 一致）。依真實 TCP 來源 IP 在 TLS 前檢查，不信任轉發標頭；修改需重啟對應接收端。Docker、NAT 應填接收端實際看到的來源。IP 限制不能取代 token 驗證。驗證啟用而 `allowed_cidrs` 為空時，每個監聽區段（service）啟動時各記一次 Warn（欄位 `listener`，訊息原文 `S2S allowed_cidrs is empty: source IP is not restricted, only token authenticates peers`），訊息只說來源 IP 不受限、僅靠 token 驗證，不提 mTLS 或客戶端憑證（實作沒有客戶端憑證）；Central 的 gate／world／chat／lobby 四段都空時會看到四筆。
 
@@ -218,7 +218,7 @@ Gate 從 2001、World 從 1001、Chat 從 3001、Lobby 從 4001 起分配，管�
 - 預設在到期前 30 天換發 90 天服務憑證，保留 DNS SAN，產生新私鑰並驗證 CA。各 World 續期後使用獨立私鑰。非 DNS SAN、CA 即將到期或簽發失敗會停止，不降低名稱驗證或自動更換 CA。
 - 每次維護均分發目前版本。部分主機失敗後再次執行，不會把剛更新的 token 再輪替；跨主機發布不是交易，期間可能短暫重連失敗。新增／撤銷後也要執行維護入口，才能同步遠端。
 - 憑證與私鑰逐檔替換，新握手可能短暫失敗後重試；已建立連線不因服務憑證續期而關閉。CA 輪替仍需人工協調新舊信任。
-- 腳本失敗回傳非零碼；實際告警目的地待正式環境選定後接入。分發失敗時錯誤附角色、主機與 ssh stderr（最後 500 字元）；接收端**發布與還原都失敗**時以結束碼 3（`RestoreFailed`）結束，目的目錄可能新舊混雜，`invoke-s2s-maintenance.ps1` 會改提示人工查核該主機，不要只等下次重試（第十二輪 CL-L2）。
+- 腳本失敗回傳非零碼；實際告警目的地待正式環境選定後接入。分發失敗時錯誤附角色、主機與 ssh stderr（最後 500 字元）；接收端**發布與還原都失敗**時以結束碼 3（還原失敗）結束，目的目錄可能新舊混雜，`invoke-s2s-maintenance.ps1` 會改提示人工查核該主機，不要只等下次重試（第十二輪 CL-L2）。
 
 Windows 原生排程預設只輸出 XML，供檢閱；加 `-Install` 才註冊每日 03:00 工作：
 

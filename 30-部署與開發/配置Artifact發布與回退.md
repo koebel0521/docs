@@ -128,8 +128,8 @@ World 資料庫連線字串只從環境變數 `WORLD_MYSQL_DSN` 讀取（腳本�
 
 - 生效前沿用父 release：`current.json` 已指向新版本，但 World 在 `effective_at` 之前繼續載入 `parent_config_version`；`pkg/dataconfig.LoadActiveSnapshot` 與熱重載（`errReloadScheduled`）都走同一判斷。到點後 watcher 的計時器觸發 reload 換版，不需再發布。
 - 以 Central 校正時鐘判斷：World 用 `App.GameNow`（Central TimeSync 校正後的遊戲時鐘），不用主機時鐘，多台主機才會同一時刻換版。
-- 時鐘一律由呼叫端注入：`dataconfig.NewSnapshotStore(initial, checker, clock, ...)` 與 `LoadActiveSnapshot(artifactRoot, clock)` 都收 `dataconfig.GameClock`，nil 回錯（`WithTimeSync` 選項已移除）；離線工具與測試傳 `dataconfig.HostClock{}`（主機牆鐘，視為恆已對時），服務執行期傳 `App`。
-- World 首次 TimeSync 前一律視為未生效、不換版（主機時鐘偏快會讓這台提早換版）；監看 goroutine 對時前不排計時器，等 `GameClock.FirstTimeSync()`（`AppBase.FirstTimeSync()`，原名 `TimeSynced()`）關閉後重跑 reload：該換馬上換，沒到就以校正時間重設計時器（commit `d232bc76e`）。
+- 時鐘一律由呼叫端注入：`dataconfig.NewSnapshotStore(initial, checker, clock, ...)` 與 `LoadActiveSnapshot(artifactRoot, clock)` 都收 `dataconfig.GameClock`，nil 回錯（已移除 `WithTimeSync` 選項）；離線工具與測試傳 `dataconfig.HostClock{}`（主機牆鐘，視為恆已對時），服務執行期傳 `App`。
+- World 首次 TimeSync 前一律視為未生效、不換版（主機時鐘偏快會讓這台提早換版）；監看 goroutine 對時前不排計時器，等 `GameClock.FirstTimeSync()`（`AppBase.FirstTimeSync()`，舊名 `TimeSynced()`）關閉後重跑 reload：該換馬上換，沒到就以校正時間重設計時器（commit `d232bc76e`）。
 - 首次發布（沒有父 release）不可設定未來時間：無從退讓，載入會回 `future effective config requires a parent release`。排程換版只用於已有父版本的後續發布。
 - 回退仍走第 4 節流程；排程中的版本想取消，回退到父版本或重新發布不帶 `-EffectiveAt` 的版本。
 

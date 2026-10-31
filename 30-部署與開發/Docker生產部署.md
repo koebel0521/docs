@@ -126,7 +126,7 @@ AUTO_MIGRATE_DISABLED=true
 - `Chat` → `chat_message` 表
 - `World` → `gamestore.Models()` 的全部資料表（玩家、背包、盤面、任務、record outbox 等）與 `combatstore` 的戰鬥相關資料表
 
-關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。資料表都在之後，再以各 model 宣告的索引比對 `information_schema.statistics`（第十一輪 DB-L2）：缺少的索引（含 model 以 `gorm:"unique"` 宣告的唯一約束，MySQL 以同名唯一索引呈現）記一行 Warn `AUTO_MIGRATE_DISABLED=true but indexes are missing; create them per the production deploy doc (Docker生產部署.md)`（欄位 `missing`，格式 `table.index`），查詢失敗記 Warn `database index check failed`；兩者都**不擋啟動、不修改 schema**。缺欄位會立刻報錯，缺索引只會在資料量大時退化成全表掃描並拉長持鎖，升級後務必搜這行 Warn，照下節補建。
+關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。資料表都在之後，再以各 model 宣告的索引比對 `information_schema.statistics`（第十一輪 DB-L2）：缺少的索引（含 model 以 `gorm:"unique"` 宣告的唯一約束，MySQL 以同名唯一索引呈現）記一行 Warn `AUTO_MIGRATE_DISABLED=true but indexes are missing or mismatched; create or fix them per the production deploy doc (Docker生產部署.md)`（缺少的放欄位 `missing`，格式 `table.index`；索引存在但欄位順序或唯一性與 model 宣告不符的放欄位 `mismatch`，格式 `table.index: want (a,b), got (b,a)`），每日帳號清除（`runPurge`）依賴的索引欄位不符時同樣跳過該作業並回 `MissingIndexError`，查詢失敗記 Warn `database index check failed`；兩者都**不擋啟動、不修改 schema**。缺欄位會立刻報錯，缺索引只會在資料量大時退化成全表掃描並拉長持鎖，升級後務必搜這行 Warn，照下節補建。
 
 Record 例外：每日事件分表（`record_events_YYYYMMDD`）屬於資料分區，無法由一次性 migration 預先建立；`AUTO_MIGRATE_DISABLED=true` 時 Record 不建立分表，寫入前改查該日分表是否存在：存在（外部工具已預建）就放行並記入快取，之後不再查；不存在才回暫時性錯誤（`record table ... does not exist and AUTO_MIGRATE_DISABLED=true`），消費端退避重試，外部工具建好後自動恢復，不會直接進死信。正式 compose 預設仍只對 Record 設 `AUTO_MIGRATE_DISABLED=false`，由 Record 自己補建。Record 只**補建不存在的**事件分表（啟動時預建最近 31 天與明天，每小時檢查一次，每張建表另有 30 秒期限），既有分表不再跑 `AutoMigrate`：模型改了也不會自動 ALTER 正式庫的大表，既有分表的結構變更一律走 PJA-Database plan（行為變更）。
 
@@ -469,8 +469,8 @@ release / version 流程請參考 [[Docker發版流程]]。
 
 ## 第十九輪補充（2026-10-23）
 
-- combat 快照寫入（`combatstore/snapshot.go`）改用 `INSERT ... VALUES ... AS new ON DUPLICATE KEY UPDATE`，需要 MySQL 8.0.19 以上（正式環境已釘 8.4）。
+- combat 快照寫入（`combatstore/snapshot.go`）改用 `INSERT ... VALUES ... AS new ON DUPLICATE KEY UPDATE`，需要 MySQL 8.0.19 以上（正式環境已釘 8.4）。第三十輪起所有 GORM upsert（`clause.OnConflict` 的 `DoUpdates`／`UpdateAll`）都由 `pkg/mysql` 的 dialect（`upsert_alias.go`）統一編成列別名語法（`... AS new ON DUPLICATE KEY UPDATE col = new.col`），因此整個服務都需要 MySQL 8.0.19 以上；`TestSavePlayerChangesRaisesNoMySQLWarnings` 守門寫回不產生 MySQL warning（`warning_count` 為 0）。升級資料庫版本前先確認。
 - `game_board_command_total{result="aborted"}` 為關機中止的盤面指令，不計入 error；`world minute audit panic recovered`、`gate audit panic recovered` 為稽核專屬 panic 標籤（`game_panic_recovered_total`）。
 - Lobby admin／gm 的封禁日誌與 Central 啟動掃描未正規化帳號的日誌，帳號改記 `accountHash`（`accountrule.LogHash`，兩邊共用）；其餘日誌不記帳號。查帳號要先算雜湊。
-- Gate、Chat、Record 的必要依賴（Redis、歷史／事件 store）缺少時啟動失敗；Gate `/diag/session`、`/diag/player`、`/diag/reconcile` 走 basic auth（`/diag/protocol` 不受保護）。
+- Gate、Chat、Record 的必要依賴（Redis、歷史／事件 store）缺少時啟動失敗；Gate `/diag/session`、`/diag/player`、`/diag/reconcile` 走 basic auth（`/diag/protocol` 不受保護）；第三十輪起 pprof 與 `/diag/*` 的 basic auth 失敗以來源為單位限流，連錯 5 次後回 429、之後每 12 秒回復一次嘗試機會（與 Lobby admin 共用 `httpx.AuthLimiter`）。
 - 腳本：`get-failed-pipeline-logs.ps1` 不再有 `-Token` 參數（用 `GITLAB_API_TOKEN` 或互動輸入）；覆蓋率分片以 covdata 合併。
