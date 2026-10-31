@@ -25,7 +25,7 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
 | `gm:ban:{account}` | String | Lobby (admin) | 封禁期間（`duration` 參數，預設 30 天 `defaultBanTTL`） | 帳號封禁標記（key 存在 = 被封禁） |
-| `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除 | GM 踢人佇列，Gate 用 BLPOP 消費（BLPOP 出錯後以 1 秒起倍增到 30 秒、±30% 抖動的指數退避重試，成功即歸零，Redis 長時間故障時不再每秒一行 Warn，多台 Gate 也不會同一秒打回）；playerID 解析失敗記 Warn 並計 `game_async_failure_total{queue="kick",outcome="invalid_payload"}` |
+| `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除；Lobby 每次推入後 `EXPIRE` 清單 60 秒（`kickcmd.ListTTL`），Gate 離線時自行消失 | GM 踢人佇列，條目為 JSON `{"playerID","requestedAtMs","reason"}`（`pkg/kickcmd`；舊版純數字 playerID 仍接受一版，下一版移除）；Gate 取出時若請求已超過 60 秒（`kickcmd.MaxAge`）就丟棄，記 Warn `gm kick queue: expired command dropped` 並計 `game_async_failure_total{service="gate",queue="kick",outcome="expired"}`（正常退場路徑，不算捨棄）；Gate 用 BLPOP 消費（BLPOP 出錯後以 1 秒起倍增到 30 秒、±30% 抖動的指數退避重試，成功即歸零，Redis 長時間故障時不再每秒一行 Warn，多台 Gate 也不會同一秒打回）；playerID 解析失敗記 Warn 並計 `game_async_failure_total{queue="kick",outcome="invalid_payload"}` |
 | `gm:version:policy` | String（JSON） | Lobby (admin) → Gate | 永久 | Client 版本政策：維護旗標、線上玩家寬限期與各平台最低／最新遊戲版本；Gate 每 10 秒重新載入，讀取失敗沿用舊值 |
 | `gm:grant_item:{worldID}` | List | Lobby (admin) → World | 消費後移除 | GM 發道具佇列，World 用 BRPopLPUSH 消費 |
 | `gm:grant_item:processing:{worldID}` | List | World | 消費期間 | 處理中指令（BRPOPLPUSH 從佇列移入，處理完移除，避免重複消費）。多 worker 時第 N（N≥1）個 worker 用 `gm:grant_item:processing:{worldID}:{index}`，第 0 個沿用不帶 index 的 key；調降 worker 數後殘留的 `:{index}` 清單要手動檢查，不會自動回收 |
