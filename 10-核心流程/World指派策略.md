@@ -73,7 +73,7 @@ LeastLoadedWorldID()
 |------|---------|
 | World 容量上限 | `LeastLoadedWorldID` 中加入 `maxPlayers` 檢查，滿員時跳過 |
 | 加權指派 | World 定期回報 CPU/記憶體負載，Central 綜合考量 |
-| 玩家遷移 | 新增 `MigrateUserToWorld` 訊息，支援線上搬移 |
+| 玩家遷移 | 新增 MigrateUserToWorld 訊息，支援線上搬移 |
 | 多 Central 一致性 | 透過 Redis 共享各 World 的即時玩家數 |
 
 ## 相關文件
