@@ -42,7 +42,7 @@
 ### 解碼
 
 - `Coder.DecodePooled(r)` 回傳 `(id, payload, release, err)`；payload 借自池，處理完必須呼叫 `release`
-- 分級池：8KB／64KB／512KB；超過 512KB 的緩衝直接配置、不還池
+- 分級池：8KB／64KB；超過 64KB 的 frame 不借池、直接配置（原 512KB 池級已刪）
 - 大於 64KB 的 frame 依實際收到的資料逐步擴充（初始 64KB、每次加倍），不依對端宣告的長度預先配置，避免只送 header 的連線佔住 4MB
 - `Coder.Decode(r, b)` 是使用呼叫端暫存的非池版本
 
@@ -198,7 +198,7 @@ go svc.Start()
 | `withServerOptions(tcpconfig.ServerOptions)` | 來源 IP 限流、`MaxConns`、`SocketSendQueueDepth` |
 | `withAddrConfig`（不匯出） | 位址解析與握手設定，由 `WithConfig` 呼叫；`WithTCPConfig` 只剩 tcpclient 有 |
 | `WithSocketOptions(...)` | socket 層選項（型別為 `tcpsocket.Option`） |
-| `WithReadyRegister(fn)` | 就緒檢查的註冊函式；正式環境傳 `debug.Server` 的 `RegisterReadyChecker`（由 `startup.InitializeObservability` 回傳的 `*debug.Server` 經組合根傳遞），不設定時不註冊。全域的 `debug.Default`、`debug.RegisterReadyChecker`、`debug.CheckReady` 已刪除 |
+| `WithReadyRegister(fn)` | 就緒檢查的註冊函式；正式環境傳 `debug.Server` 的 `RegisterReadyChecker`（由 `startup.InitializeObservability` 回傳的 `*debug.Server` 經組合根傳遞），不設定時不註冊。全域的 debug.Default、debug.RegisterReadyChecker、debug.CheckReady 已刪除 |
 | `WithMaxFrameSize(n)` | 收包 frame 上限 |
 
 socket 選項：`WithRateLimit`（每條連線獨立的讀取限流，超過即關閉）、`WithUntrustedPeer`（玩家連線，見事件派發）、`WithSendQueueDepth`（送出佇列深度，Start 前套用）、`withEventCh`（`NewOwnerBase` 自動附加）。
@@ -296,7 +296,7 @@ eventCh 滿時兩者都計 `game_event_queue_overflow_total`，以 `action` 標�
 | `tcpclient` 的 `defaultDialTimeout` | 10 秒 | 預設 `dial` 函式（`net.Dialer`） |
 | `s2sauth` 握手 | 5 秒 | TLS 與身份 frame 完成前的整體 deadline，完成後清除 |
 
-命名依 Go 慣例：`Timeout` 指時間長度、`Deadline` 指絕對時間點（第十一輪把 `ServerDeadline`、`PlayerWriteDeadline`、`UserDeadline`、`WithReadDeadTime`／`WithWriteDeadTime`、`OwnerBaseConfig.ReadDeadTime`／`WriteDeadTime` 統一改為 `*Timeout`）。
+命名依 Go 慣例：`Timeout` 指時間長度、`Deadline` 指絕對時間點（第十一輪把舊名 ServerDeadline、PlayerWriteDeadline、UserDeadline、WithReadDeadTime／WithWriteDeadTime、OwnerBaseConfig.ReadDeadTime／WriteDeadTime 統一改為 `*Timeout`）。
 
 讀緩衝：`tcpsocket.WithReadBufferSize` 設定單一 socket 的 `bufio.Reader` 大小（預設 8KB）。Gate 玩家連線設 2KB（`gateUserReadBufferSize`；玩家訊息聊天上限 1KB、帳密各 128B），每條連線少 6KB 常駐記憶體；S2S 維持 8KB。大於緩衝的 frame 由 bufio 直接讀進池緩衝，不受影響。
 

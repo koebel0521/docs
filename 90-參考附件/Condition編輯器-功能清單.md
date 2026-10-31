@@ -19,7 +19,7 @@
 | 統一資料列格式 | 寫入的每一列都套第一個有框線的資料列格式，不再出現沒框線、靠右的列 | `27b5cbf` |
 | 名稱欄 `#Name` | 條件名稱寫在 Id 後面的 `#Name` 欄，Luban 略過 | 基準 |
 | 外部變更提示 | 每幾秒檢查 Excel，被改過會提示重新載入；Excel 正開著也會提示 | 基準 |
-| 設定檔 | `config.json`：`datas`、`port`、`openBrowser`；命令列參數優先 | 基準 |
+| 設定檔 | `config.json`：`datas`、`port`、openBrowser；命令列參數優先 | 基準 |
 | 啟動檢查 | `啟動.cmd` 檢查 Python 與 `openpyxl`，缺少時用中文說明，`openpyxl` 可詢問後自動安裝 | 基準 |
 | 關閉程式 | 網頁上的「關閉程式」按鈕；不會因閒置自動關閉 | 基準 |
 | 打包成 exe | `build.cmd` 以 PyInstaller 產生單一 `ConditionEditor.exe`，附 `config.json` 與使用說明 | 基準 |
@@ -140,7 +140,7 @@
 
 | 項目 | 說明 |
 |---|---|
-| Mission 條件欄位改成 Luban 引用型別 | 把 `Mission.xlsx` 的 `VisibilityConditionId`、`ActivationConditionId`、`ClaimConditionId` 改成 `int#ref=Shared.ConditionConfigTable?`，Luban 才會擋掉「條件被刪但還有人引用」；會影響 Mission 產出程式碼，要通知程式人員 |
+| Mission 條件欄位改成 Luban 引用型別 | 把 `Mission.xlsx` 的 VisibilityConditionId、ActivationConditionId、ClaimConditionId 改成 `int#ref=Shared.ConditionConfigTable?`，Luban 才會擋掉「條件被刪但還有人引用」；會影響 Mission 產出程式碼，要通知程式人員 |
 | PJA-Server Type 4 的部署 | Server 端提交 `4eddd4422` 已在 `origin/develop`；正式環境部署（發版）完成後，正式的 `Condition.xlsx` 才能使用 Type 4；在那之前不要填 |
 | PJA-Docs 分支 | `docs/condition-ref` 要併回 `main` |
 | 推送 | `ConditionEditor` 的本機 git 專案還沒有遠端 |

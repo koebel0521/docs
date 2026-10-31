@@ -11,7 +11,7 @@
 | `lobby:world:{worldID}` | Hash | World | 25s（`keyTTL`） | World 地址與容量；World 在載入設定、遷移、啟動服務且啟動自檢通過之後才開始公告（第十二輪起，自檢失敗直接退出） |
 | `lobby:gates`、`lobby:centrals`、`lobby:worlds` | Set | 各服務 | 無 | 各類服務的 ID 索引（`IndexKey`），成員為服務 ID；服務停止時移除 |
 
-Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` 的第四個必要參數，接 `debug.Server.CheckServing`；nil 時 panic，原 `WithReadyCheck` Option 已移除），與 `/ready` 是同一組檢查（含 runtime-only 的啟動閘門與 `time_sync`），`/ready` 503 時就不公告。第十一輪接的是 `CheckReady`（第十二輪改名 `CheckStartup`），只跑啟動自檢子集，`/ready` 503 時仍會公告：連不上 Central 的 Gate 卻以 0 負載排在 Lobby 清單最前，所有登入都回 `AuthServiceUnavailable`（第十二輪 N-M1 修正）。取捨：Central 全斷時所有 Gate／World 都會撤除公告；重啟後第一次公告要等閘門放行且收到 TimeSync 後的下一輪（最多 10 秒）。不就緒時刪除自己的 key 與索引成員而非續期，恢復後重新公告，只在狀態轉變時記日誌（Warn `lobby reporter: not ready, withdrawing announcement`／Info `lobby reporter: ready, announcing`；啟動後第一次未就緒不記 Warn）；服務關機（ctx 已取消）時不跑檢查，不會誤記未就緒。Redis、MySQL 或 `data_config` 檢查短暫失敗時，該實例也會暫時從 Lobby 清單消失。原本監聽失敗或 accept 迴圈 panic 後仍每 10 秒續期，負載歸零的 Gate 排在 Lobby 清單最前，把新玩家導向連不上的位址。
+Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` 的第四個必要參數，接 `debug.Server.CheckServing`；nil 時 panic，原 `WithReadyCheck` Option 已移除），與 `/ready` 是同一組檢查（含 runtime-only 的啟動閘門與 `time_sync`），`/ready` 503 時就不公告。第十一輪接的是舊名 `CheckReady`（第十二輪改名 `CheckStartup`），只跑啟動自檢子集，`/ready` 503 時仍會公告：連不上 Central 的 Gate 卻以 0 負載排在 Lobby 清單最前，所有登入都回 `AuthServiceUnavailable`（第十二輪 N-M1 修正）。取捨：Central 全斷時所有 Gate／World 都會撤除公告；重啟後第一次公告要等閘門放行且收到 TimeSync 後的下一輪（最多 10 秒）。不就緒時刪除自己的 key 與索引成員而非續期，恢復後重新公告，只在狀態轉變時記日誌（Warn `lobby reporter: not ready, withdrawing announcement`／Info `lobby reporter: ready, announcing`；啟動後第一次未就緒不記 Warn）；服務關機（ctx 已取消）時不跑檢查，不會誤記未就緒。Redis、MySQL 或 `data_config` 檢查短暫失敗時，該實例也會暫時從 Lobby 清單消失。原本監聽失敗或 accept 迴圈 panic 後仍每 10 秒續期，負載歸零的 Gate 排在 Lobby 清單最前，把新玩家導向連不上的位址。
 
 ## `player:*` / `world:*` — 玩家狀態（playerstoreredis）
 
@@ -63,7 +63,7 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.GateValidateJournal*` 保留供維運工具清除舊鍵。
+2026-10-30 起 Central、Gate 與 World 的登入、登出、恢復驗證 journal 已刪，不再寫入新鍵；下列已刪除者的舊鍵最多殘留一個 TTL（2 分鐘），`rediskeys.LegacyGateValidateJournalPattern` 保留（只供 `tools/private` 的 staterepair 清殘留）。
 
 每筆紀錄的完整 key 為「前綴:{scope}:{requestID}」（scope 為帳號或 playerID），值為 String（JSON）。
 
