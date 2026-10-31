@@ -165,7 +165,7 @@ go build -modfile=tools/gotools/go.mod -o .run/golangci-lint.exe github.com/gola
 ```
 
 - 輸出到 `.run/`（已被 `.gitignore` 忽略）；Linux／macOS 去掉 `.exe`。`make ci-lint` 也會在同一路徑編出同一支執行檔，可直接沿用。
-- 提交前仍以 `go tool -modfile=tools/gotools/go.mod golangci-lint fmt <檔案>` 整理格式（gofumpt、gci），不要只靠 GoLand 內建的 goimports。
+- 提交前仍以 `scripts/gotool.sh golangci-lint fmt <檔案>` 整理格式（gofumpt、gci），不要只靠 GoLand 內建的 goimports。
 
 ## 建議啟動順序
 
