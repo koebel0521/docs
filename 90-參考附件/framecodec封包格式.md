@@ -78,7 +78,7 @@ TCP 是串流，一次 `Read` 不一定剛好拿到一個完整 frame，需自�
 | `Coder.WriteFrame(w, msgID, payload)` | 組出 frame 並以一次 `Write` 寫入 `io.Writer` |
 | `Coder.WriteFramePrebuilt(w, msgID, frame)` | frame 已預留 header 時只填 header 後寫出（Socket 傳送路徑使用） |
 | `Coder.Decode(reader, buf)` | 從 reader 讀出一個 frame，回傳 `msgID` 與 `payload` |
-| `Coder.DecodePooled(reader)` | 物件池版本解碼 |
+| `Coder.DecodePooledWith(reader, …)` | 物件池版本解碼 |
 
 Socket／OwnerBase 直接持有 `*framecodec.Coder`（`pkg/tcpsocket` 已沒有 `Coder` 別名），Server／Client 連線預設使用本格式。
 

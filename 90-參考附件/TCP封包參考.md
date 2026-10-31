@@ -41,7 +41,7 @@
 
 ### 解碼
 
-- `Coder.DecodePooled(r)` 回傳 `(id, payload, release, err)`；payload 借自池，處理完必須呼叫 `release`
+- `Coder.DecodePooledWith(r, …)` 回傳 `(id, payload, release, err)`；payload 借自池，處理完必須呼叫 `release`
 - 分級池：8KB／64KB；超過 64KB 的 frame 不借池、直接配置（原 512KB 池級已刪）
 - 大於 64KB 的 frame 依實際收到的資料逐步擴充（初始 64KB、每次加倍），不依對端宣告的長度預先配置，避免只送 header 的連線佔住 4MB
 - `Coder.Decode(r, b)` 是使用呼叫端暫存的非池版本
@@ -259,7 +259,7 @@ svc := tcpclient.New(name, baseApp, ownerHandler,
 
 收包流程（`Socket.receiveOnce`／`handleIncoming`）：
 
-1. 節流設定 read deadline 後 `DecodePooled`
+1. 節流設定 read deadline 後 `DecodePooledWith`
 2. 讀取限流超過 → 關閉
 3. msgID 為 0 → 玩家連線記 Warn 後關閉連線（無合法用途，避免每則灌一行日誌且繞過未 Hello 檢查）；S2S 連線記 Error 後略過、連線保留
 4. 用 owner 的 factory 建訊息、`Unpack`、歸還緩衝

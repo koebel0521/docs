@@ -25,7 +25,7 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
 | `gm:ban:{account}` | String | Lobby (admin) | 封禁期間（`duration` 參數，預設 30 天 `defaultBanTTL`） | 帳號封禁標記（key 存在 = 被封禁） |
-| `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除；Lobby 每次推入後 `EXPIRE` 清單 60 秒（`kickcmd.ListTTL`），Gate 離線時自行消失 | GM 踢人佇列，條目為 JSON `{"playerID","requestedAtMs","reason"}`（`pkg/kickcmd`；舊版純數字 playerID 仍接受一版，下一版移除）；Gate 取出時若請求已超過 60 秒（`kickcmd.MaxAge`）就丟棄，記 Warn `gm kick queue: expired command dropped` 並計 `game_async_failure_total{service="gate",queue="kick",outcome="expired"}`（正常退場路徑，不算捨棄）；Gate 用 BLPOP 消費（BLPOP 出錯後以 1 秒起倍增到 30 秒、±30% 抖動的指數退避重試，成功即歸零，Redis 長時間故障時不再每秒一行 Warn，多台 Gate 也不會同一秒打回）；playerID 解析失敗記 Warn 並計 `game_async_failure_total{queue="kick",outcome="invalid_payload"}` |
+| `gm:kick:{gateID}` | List | Lobby (admin) → Gate | 消費後移除；Lobby 每次推入後 `EXPIRE` 清單 60 秒（`kickcmd.ListTTL`），Gate 離線時自行消失 | GM 踢人佇列，條目為 JSON `{"playerID","requestedAtMs","reason"}`（`pkg/kickcmd`；舊版純數字 playerID 已不再接受，Gate 計 `invalid_payload` 丟棄）；Gate 取出時若請求已超過 60 秒（`kickcmd.MaxAge`）就丟棄，記 Warn `gm kick queue: expired command dropped` 並計 `game_async_failure_total{service="gate",queue="kick",outcome="expired"}`（正常退場路徑，不算捨棄）；Gate 用 BLPOP 消費（BLPOP 出錯後以 1 秒起倍增到 30 秒、±30% 抖動的指數退避重試，成功即歸零，Redis 長時間故障時不再每秒一行 Warn，多台 Gate 也不會同一秒打回）；playerID 解析失敗記 Warn 並計 `game_async_failure_total{queue="kick",outcome="invalid_payload"}` |
 | `gm:version:policy` | String（JSON） | Lobby (admin) → Gate | 永久 | Client 版本政策：維護旗標、線上玩家寬限期與各平台最低／最新遊戲版本；Gate 每 10 秒重新載入，讀取失敗沿用舊值 |
 | `gm:grant_item:{worldID}` | List | Lobby (admin) → World | 消費後移除 | GM 發道具佇列，World 用 BRPopLPUSH 消費 |
 | `gm:grant_item:processing:{worldID}` | List | World | 消費期間 | 處理中指令（BRPOPLPUSH 從佇列移入，處理完移除，避免重複消費）。多 worker 時第 N（N≥1）個 worker 用 `gm:grant_item:processing:{worldID}:{index}`，第 0 個沿用不帶 index 的 key；調降 worker 數後殘留的 `:{index}` 清單要手動檢查，不會自動回收 |
@@ -46,7 +46,7 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
 |----------|------|-------|-----|------|
-| `central:routing:{playerID}` | Hash | Central | 24 小時（`RoutingTTL`，寫入刷新；登出刪除） | 路由表：欄位 `gate`、`world`、`account` |
+| `central:routing:{playerID}` | Hash | Central | 24 小時（`RoutingTTL`，寫入刷新；登出刪除） | 路由表：欄位 `gate`、`world`、`account`、`seq`（登入序號，`Store` 比序號擋舊資料回寫、`DeleteIfGate/IfWorld` 比序號相等才刪；舊資料無此欄位視為 0） |
 | `central:account:{account}` | Hash | Central | 7 天（`AccountCacheTTL`） | 帳號快取：欄位 `uid`、`wid`、`hash`（passwordHash） |
 | `central:lock:account:{account}` | String (NX+PX) | Central | 15s（`redisLockTTL`）；帳號清除 1 分鐘（`purgeLockTTL`） | 登入與帳號清除的分散式鎖，值為持鎖 token。取鎖的用戶端逾時（`DeadlineExceeded`）不代表 `SET NX PX` 沒在 Redis 執行，鎖可能已以本次 token 寫入卻沒人會解；逾時時會用脫離取消的 ctx 對同一 token 補一次 `Unlock`（比對 token，不會誤刪別人的鎖），同帳號登入不必等滿 15 秒。登入取鎖後以 `LoginAccountLockHold`（`redisLockTTL` 減 5 秒）作為處理期限，逾時即中止，不讓鎖在流程中途過期 |
 | `central:world:drain` | Set | Lobby (admin) | 排空期間 | 排空中的 World ID 集合 |
