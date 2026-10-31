@@ -41,9 +41,10 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
 .\scripts\publish-data-config.ps1 `
   -Root config\data `
   -TopologyMigration `
-  -RequireTopologyMigratable `
-  -TopologyBaselineDSN $env:WORLD_MYSQL_DSN
+  -RequireTopologyMigratable
 ```
+
+World 資料庫連線字串只從環境變數 `WORLD_MYSQL_DSN` 讀取（腳本沒有 DSN 參數，密碼不會留在 shell 歷史或行程命令列；未設定時 `-RequireTopologyMigratable`、`-CompactTopologyLineage` 會直接報錯），執行前先設好：`$env:WORLD_MYSQL_DSN = '…'`。
 
 發布後重新啟動 World。盤面版本檢查與初始化／離線搬遷：
 
@@ -63,8 +64,7 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
 ```powershell
 .\scripts\publish-data-config.ps1 `
   -Root config\data `
-  -CompactTopologyLineage `
-  -TopologyBaselineDSN $env:WORLD_MYSQL_DSN
+  -CompactTopologyLineage
 ```
 
 壓縮只切斷配置 lineage，不搬遷玩家資料，也不會自動刪除舊 release。
@@ -102,7 +102,7 @@ World 預設要求 `current.json`。只有本機開發或 Docker 範例配置明
 .\scripts\cleanup-data-config-releases.ps1 -Root config\data
 ```
 
-確認候選清單、備份 `current.json` 與清單後，才加 `-Apply`。`-Apply` 會再次檢查玩家盤面版本；不符合時拒絕刪除。
+確認候選清單、備份 `current.json` 與清單後，才加 `-Apply`（`-Apply` 時 World DSN 同樣只讀環境變數 `WORLD_MYSQL_DSN`）。dry run 與 `-Apply` 的輸出除候選 release 外，還會列出 `stale_stage=<目錄名>`（發布到一半被中斷、超過 1 小時的暫存目錄 `.<sha>.tmp-*`）與 `stale_stage_count=`，`-Apply` 時一併刪除。`-Apply` 會再次檢查玩家盤面版本；不符合時拒絕刪除。
 
 清理是破壞性操作。保留中的 current lineage、仍被玩家引用的版本、未完成搬遷或無法辨識的 legacy 版本不可清理。
 
