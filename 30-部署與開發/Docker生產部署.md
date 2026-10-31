@@ -290,6 +290,18 @@ ORDER BY table_name, ordinal_position;
 大表建索引會鎖表時間較長，請在離峰執行。`combat_session` 與 `record_outbox_event` 的保留期清理見[資料一致性](../10-核心流程/資料一致性.md)；World 設定檔 `retention.outbox_sent_days`（預設 30）、`retention.combat_session_days`（預設 90）、`retention.unsettled_combat_session_days`（預設 30，未結算且 `expires_at` 過期的場次）、`retention.mission_event_days`（預設 30，`player_mission_event` 依 `applied_at`），`0` 表示永久保留，其餘不得小於 7。首次啟用時積壓的歷史列會在第一輪（World 啟動後約 5 分鐘）以每批 1000 列、批間停 100ms、每批獨立 ReadCommitted 交易分批刪完；`mission_event_days` 的下限是 max(7, 任務補償回看天數)，兩者皆大於 0 時實際刪除天數取 max(`mission_event_days`, `outbox_sent_days`)，任一為 0 就不清任務事件。大庫請先確認 `idx_combat_session_settled_expires`、`idx_player_mission_event_applied_at` 已建：缺索引時該段清理被跳過並計入 `game_retention_ops_total{result="error"}`（告警 `GameRetentionPurgeFailing`），日誌帶 `ALTER` 提示。只想先觀察可暫時設 `0`。
 
 
+#### 升級前檢查：任務待領獎勵舊列
+
+任務待領獎勵（`player_mission_claim`，未領取列）現在載入時以 `PendingClaim.Validate` 驗證：`cycle` 不得為 0、`config_version` 必須是完整長度（`manifest.ConfigVersionLength`＝40）、獎勵來源 `reward_lottery_id`／`reward_choice_lottery_id` 不得為負且恰有一個大於 0、`expires_at` 不得早於 `completed_at`。不合法的舊列會在玩家載入時被視為損毀。升級前先查，結果應為空，非空者需人工修正或確認後處理：
+
+```sql
+SELECT player_id, mission_id, cycle FROM player_mission_claim
+WHERE claimed_at IS NULL AND (reward_lottery_id < 0 OR reward_choice_lottery_id < 0
+  OR (reward_lottery_id = 0) = (reward_choice_lottery_id = 0)
+  OR (expires_at IS NOT NULL AND expires_at < completed_at) OR cycle = 0
+  OR CHAR_LENGTH(config_version) <> 40);
+```
+
 ### 部署前的 migration 預檢（preflight_migrate）
 
 `ci-deploy.sh` 在**關服之前**執行 `preflight_migrate`（`scripts/lib/migrate.sh`）：用與正式 migration 同一組旗標（`-dir`、`-environment`、`-timeout`、`-lock-timeout`，值取自 `.env.prod` 的 `MIGRATION_*`）跑 `datamigrate -mode validate`，只驗旗標與 plan 版本鏈，**不連資料庫、不帶 `MYSQL_DSN`**。`MIGRATION_TIMEOUT` 這類值寫錯、`MIGRATION_PLAN_DIR` 不是已存在的宿主機絕對路徑，都在這裡失敗，服務尚未停止；以前要到停服、備份、發布設定之後才失敗，造成停機加回滾。不帶 DSN 也避免旗標錯誤時 datamigrate 印出預設值（`-mysql` 預設取 `MYSQL_DSN`）而把含密碼的 DSN 寫進 CI log。`MYSQL_DSN` 現在也在關服前預檢：缺值、鍵名打錯或仍是 `change_me` 佔位值，`ci-deploy.sh` 在關服前就失敗並只印鍵名（不印值）。手動執行 `migrate-prod.sh` **不接受任何參數**（內層固定 `-mode apply -confirm`，帶 `-mode validate` 會被拒絕而不是預檢）；要預檢請直接呼叫 `datamigrate -mode validate`（見後端交接手冊）。

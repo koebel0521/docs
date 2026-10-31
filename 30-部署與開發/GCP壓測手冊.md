@@ -22,7 +22,7 @@
 
 | 設定 | 預設 | 5000 人 | 原因 |
 |---|---|---|---|
-| Gate 根層 `max_connections` | 1024 | 5500 | 否則第 1025 個連線被拒（不要用已棄用的 `tcp.max_connections`） |
+| Gate 根層 `max_connections` | 1024 | 5500 | 否則第 1025 個連線被拒（舊鍵 `tcp.max_connections` 已移除，不要再用） |
 | Gate `go.memory_limit_mb` | 512 | 1280 | 5000 連線約 0.8～1GB；上限低於實際用量時延遲明顯變差（第 39 步） |
 | World `max_players` | 5000 | 6000 | 剛好 5000 會把第 5001 位擋掉 |
 | World `go.memory_limit_mb` | 512 | 768 | 留餘裕 |
