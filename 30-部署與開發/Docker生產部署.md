@@ -214,6 +214,14 @@ ALTER TABLE combat_session ADD INDEX idx_combat_session_settled_expires (settled
 -- World：任務事件的保留期清理依 applied_at 分批刪除；player_mission_event 是大表（壓測庫 1513 萬列），務必升級前先建。
 ALTER TABLE player_mission_event ADD INDEX idx_player_mission_event_applied_at (applied_at), ALGORITHM=INPLACE, LOCK=NONE;
 
+-- World：玩家封存的保留期清理依 updated_at 掃描（7c85b22d2，2026-09-29；索引欄位見 gamestore/models.go PlayerProfileArchive）。
+-- 若正式庫早於此日期建表且關閉 AutoMigrate，啟動只會由 warnMissingIndexes 記 Warn，要自己補；已存在就略過。
+ALTER TABLE player_profile_archive ADD INDEX idx_player_profile_archive_updated_at (updated_at), ALGORITHM=INPLACE, LOCK=NONE;
+
+-- World：戰鬥結算通知的未讀查詢依 (player_id, read_at)（2dcb1ab91，2026-10-05；索引欄位見 combatstore/notification.go settlementNotificationRecord）。
+-- 同樣只適用早於此日期建表的庫；已存在就略過。
+ALTER TABLE combat_settlement_notification ADD INDEX idx_combat_settlement_notification_unread (player_id, read_at), ALGORITHM=INPLACE, LOCK=NONE;
+
 -- 移除無查詢使用的次要索引（4c7139993，2026-10-22）。這些索引不影響正確性，只讓每筆寫入多維護索引項；
 -- AutoMigrate 不會刪舊索引，既有庫要自己 DROP（可在離峰執行，也可延後）。
 -- **索引名由 gorm 預設命名規則（idx_<表>_<欄>）推得，部署前先 SHOW INDEX FROM <表> 核對實際名稱再執行，不存在就略過。**
