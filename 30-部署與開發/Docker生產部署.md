@@ -104,7 +104,7 @@ World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更�
 
 ### 主機時鐘（NTP）
 
-Central 的主機時鐘就是遊戲時間來源（骰子恢復、冷卻、任務、戰鬥到期、每日重置、公告上下架、封存判斷都以它為準，見 [共用邊界](../00-導讀/共用邊界.md#時間規則)），其他服務以 `TimeSync` 每秒校正到 Central。
+Central 的主機時鐘就是遊戲時間來源（骰子恢復、冷卻、任務、每日重置、公告上下架、封存判斷都以它為準，見 [共用邊界](../00-導讀/共用邊界.md#時間規則)），其他服務以 `TimeSync` 每秒校正到 Central。
 
 - **Central 主機必須跑 NTP**，建議 chrony（`systemctl enable --now chronyd`），指向同一組上游；確認 `chronyc tracking` 的 `System time` 偏差在毫秒級、`Leap status` 為 `Normal`。不要在服務運行中手動改系統時間。
 - 多台 Central 時各台都要同步到同一組 NTP 來源；Gate、World、Chat、Lobby 主機也建議跑 NTP：它們的計時（逾時、TTL）與日誌用自己的主機時鐘，偏差過大時 `game_clock_offset_seconds` 會變大。
@@ -125,7 +125,7 @@ AUTO_MIGRATE_DISABLED=true
 
 - `Central` → `user` 表（模型 `store.UserRecord`）
 - `Chat` → `chat_message` 表
-- `World` → `gamestore.Models()` 的全部資料表（玩家、背包、盤面、任務、record outbox 等）與 `combatstore` 的戰鬥相關資料表
+- `World` → `gamestore.Models()` 的全部資料表（玩家、背包、盤面、任務、record outbox 等）（舊戰鬥表 `combat_session` 等六張由 World 啟動時自動 DROP，見「升版前置檢查」）
 
 關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。資料表都在之後，再以各 model 宣告的索引比對 `information_schema.statistics`（第十一輪 DB-L2）：缺少的索引（含 model 以 `gorm:"unique"` 宣告的唯一約束，MySQL 以同名唯一索引呈現）記一行 Warn `AUTO_MIGRATE_DISABLED=true but indexes are missing or mismatched; create or fix them per the production deploy doc (Docker生產部署.md)`（缺少的放欄位 `missing`，格式 `table.index`；索引存在但欄位順序或唯一性與 model 宣告不符的放欄位 `mismatch`，格式 `table.index: want (a,b), got (b,a)`），每日帳號清除（`runPurge`）依賴的索引欄位不符時同樣跳過該作業並回未匯出的 `missingIndexError`（原 `MissingIndexError`），查詢失敗記 Warn `database index check failed`；兩者都**不擋啟動、不修改 schema**。缺欄位會立刻報錯，缺索引只會在資料量大時退化成全表掃描並拉長持鎖，升級後務必搜這行 Warn，照下節補建。
 
@@ -150,7 +150,7 @@ ALTER TABLE `player_board_building` DROP FOREIGN KEY `<約束名>`;
 
 `AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列結構變更需在升級前由外部 migration 建立（PJA-Database 尚無 plan，`deps/PJA-Database/migrations/` 只有 README，暫以 SQL 手動執行）。
 
-基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：新表（`player_gold_adjustment` 等，缺表時 `requireTables` 會直接讓啟動失敗）、戰鬥相關表（`combat_*`、`wallet_ledger`）的重新設計。2026-10-05 `bd968ff43` 起整數欄位由無號改有號**不在此列：AutoMigrate 不改有號／無號，必須執行下方「整數欄位由無號改有號」的 SQL**。
+基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：新表（`player_gold_adjustment` 等，缺表時 `requireTables` 會直接讓啟動失敗）、舊戰鬥相關表（`combat_*`、`wallet_ledger`）：已隨舊戰鬥實作刪除，World 啟動時 DROP。2026-10-05 `bd968ff43` 起整數欄位由無號改有號**不在此列：AutoMigrate 不改有號／無號，必須執行下方「整數欄位由無號改有號」的 SQL**。
 
 ```sql
 -- Chat：歷史保留清理依 created_at 掃描
@@ -168,16 +168,8 @@ CREATE INDEX ix_player_lottery_draw_player_seed ON player_lottery_draw (player_i
 -- 必須在新版 Central 以 AutoMigrate 啟動前執行，AutoMigrate 不會改名，只會嘗試另外新增 player_id 欄位。
 ALTER TABLE `user` RENAME COLUMN user_id TO player_id;
 
--- World：一次停在戰鬥格只能開始一場戰鬥（30f2fe264，2026-10-07）
-ALTER TABLE player_board_state ADD COLUMN combat_pending boolean NOT NULL DEFAULT false;
-
 -- World：自動啟用任務本輪可開始時間（f4a37f853，2026-10-02）
 ALTER TABLE player_mission_state ADD COLUMN eligible_at datetime(3) NULL;
-
--- World：combat_session 依玩家、狀態與到期時間查詢；status 需先改成 varchar(32) 才能建索引
-ALTER TABLE combat_session MODIFY status varchar(32);
-CREATE INDEX idx_combat_session_attacker_status ON combat_session (attacker_player_id, status, expires_at);
-CREATE INDEX idx_combat_session_defender_status ON combat_session (defender_player_id, status, expires_at);
 
 -- World：任務新增本週期完成次數（週期重置任務的 MaxCompletion 以此計）
 ALTER TABLE player_mission_state ADD COLUMN period_completion_count int NOT NULL DEFAULT 0;
@@ -206,22 +198,12 @@ DROP INDEX idx_record_outbox_event_player_id ON record_outbox_event;
 -- 線上寫回與清除交易會互相等鎖；既有大庫務必在升級前先手動建，否則啟動時 AutoMigrate 建索引會鎖表。
 ALTER TABLE player_mission_event ADD INDEX idx_player_mission_event_player (player_id), ALGORITHM=INPLACE, LOCK=NONE;
 
--- World：戰鬥場次的保留期清理（已結算依 settled_at、未結算依 settled_at IS NULL 加 expires_at）共用一個複合索引；沒有索引時每批 DELETE 都會全表掃描。
--- 既有大庫務必在升級前先手動建，否則啟動時 AutoMigrate 建索引會鎖表；新庫由 AutoMigrate 自動建。
--- 早期版本曾有單欄索引 idx_combat_session_settled_at、idx_combat_session_expires_at：現已由此複合索引取代，AutoMigrate 不會自動刪舊的，
--- 已建過的庫確認新索引可用後可手動 DROP INDEX（開發庫同理）。
-ALTER TABLE combat_session ADD INDEX idx_combat_session_settled_expires (settled_at, expires_at), ALGORITHM=INPLACE, LOCK=NONE;
-
 -- World：任務事件的保留期清理依 applied_at 分批刪除；player_mission_event 是大表（壓測庫 1513 萬列），務必升級前先建。
 ALTER TABLE player_mission_event ADD INDEX idx_player_mission_event_applied_at (applied_at), ALGORITHM=INPLACE, LOCK=NONE;
 
 -- World：玩家封存的保留期清理依 updated_at 掃描（7c85b22d2，2026-09-29；索引欄位見 gamestore/models.go PlayerProfileArchive）。
 -- 若正式庫早於此日期建表且關閉 AutoMigrate，啟動只會由 warnMissingIndexes 記 Warn，要自己補；已存在就略過。
 ALTER TABLE player_profile_archive ADD INDEX idx_player_profile_archive_updated_at (updated_at), ALGORITHM=INPLACE, LOCK=NONE;
-
--- World：戰鬥結算通知的未讀查詢依 (player_id, read_at)（2dcb1ab91，2026-10-05；索引欄位見 combatstore/notification.go settlementNotificationRecord）。
--- 同樣只適用早於此日期建表的庫；已存在就略過。
-ALTER TABLE combat_settlement_notification ADD INDEX idx_combat_settlement_notification_unread (player_id, read_at), ALGORITHM=INPLACE, LOCK=NONE;
 
 -- 移除無查詢使用的次要索引（4c7139993，2026-10-22）。這些索引不影響正確性，只讓每筆寫入多維護索引項；
 -- AutoMigrate 不會刪舊索引，既有庫要自己 DROP（可在離峰執行，也可延後）。
@@ -258,7 +240,6 @@ GROUP BY table_name, index_name;
 
 影響（sql_mode 含 `STRICT_TRANS_TABLES`，MySQL 8.4 預設）：
 
-- `combat_session.random_seed` 是均勻亂數 int32，約一半是負數，寫入回 `Error 1264 Out of range value`，升級庫上約一半的開始戰鬥會失敗（`IsDataRejection` 為真，不觸發斷路器，但玩家開不了戰）。
 - 盤面拓撲遷移會把 `player_effect.source_id` 暫改成負數，同樣回 1264，有研究科技對應的盤面拓撲遷移都會失敗。
 
 全新庫與在有號化之後才建立的庫（含本機 dev 庫）不受影響。**正式庫是否在範圍內，部署前先確認建庫時間，並用下面第 1 步的查詢核對。**
@@ -291,7 +272,7 @@ ORDER BY table_name, ordinal_position;
 
 `PlayerMissionEvent.PlayerID` 已加 `index:idx_player_mission_event_player`，新庫由 AutoMigrate 自動建。PJA-Database 開發期 `migrations/` 為空、表由 AutoMigrate 建立，所以沒有在上游加 migration；`config_version` 不變。MySQL 8.0 拋棄式容器、20 萬列的 `EXPLAIN`：加索引前 `type=ALL` 預估 219,139 列，加索引後 `type=range`、`key=idx_player_mission_event_player` 預估 200 列。壓測庫的 `player_mission_event` 有 1513 萬列，屬須先手動 `ALTER` 的既有大庫。
 
-大表建索引會鎖表時間較長，請在離峰執行。`combat_session` 與 `record_outbox_event` 的保留期清理見[資料一致性](../10-核心流程/資料一致性.md)；World 設定檔 `retention.outbox_sent_days`（預設 30）、`retention.combat_session_days`（預設 90）、`retention.unsettled_combat_session_days`（預設 30，未結算且 `expires_at` 過期的場次）、`retention.mission_event_days`（預設 30，`player_mission_event` 依 `applied_at`），`0` 表示永久保留，其餘不得小於 7。首次啟用時積壓的歷史列會在第一輪（World 啟動後約 5 分鐘）以每批 1000 列、批間停 100ms、每批獨立 ReadCommitted 交易分批刪完；`mission_event_days` 的下限是 max(7, 任務補償回看天數)，兩者皆大於 0 時實際刪除天數取 max(`mission_event_days`, `outbox_sent_days`)，任一為 0 就不清任務事件。大庫請先確認 `idx_combat_session_settled_expires`、`idx_player_mission_event_applied_at` 已建：缺索引時該段清理被跳過並計入 `game_retention_ops_total{result="error"}`（告警 `GameRetentionPurgeFailing`），日誌帶 `ALTER` 提示。只想先觀察可暫時設 `0`。
+大表建索引會鎖表時間較長，請在離峰執行。`record_outbox_event` 的保留期清理（原 `combat_session` 保留期設定與索引 `idx_combat_session_settled_expires` 已隨舊戰鬥刪除）見[資料一致性](../10-核心流程/資料一致性.md)；World 設定檔 `retention.outbox_sent_days`（預設 30）、`retention.mission_event_days`（預設 30，`player_mission_event` 依 `applied_at`），`0` 表示永久保留，其餘不得小於 7。首次啟用時積壓的歷史列會在第一輪（World 啟動後約 5 分鐘）以每批 1000 列、批間停 100ms、每批獨立 ReadCommitted 交易分批刪完；`mission_event_days` 的下限是 max(7, 任務補償回看天數)，兩者皆大於 0 時實際刪除天數取 max(`mission_event_days`, `outbox_sent_days`)，任一為 0 就不清任務事件。大庫請先確認 `idx_player_mission_event_applied_at` 已建：缺索引時該段清理被跳過並計入 `game_retention_ops_total{result="error"}`（告警 `GameRetentionPurgeFailing`），日誌帶 `ALTER` 提示。只想先觀察可暫時設 `0`。
 
 
 #### 升級前檢查：任務待領獎勵舊列
@@ -310,6 +291,18 @@ WHERE claimed_at IS NULL AND (reward_lottery_id < 0 OR reward_choice_lottery_id 
 
 `ci-deploy.sh` 在**關服之前**執行 `preflight_migrate`（`scripts/lib/migrate.sh`）：用與正式 migration 同一組旗標（`-dir`、`-environment`、`-timeout`、`-lock-timeout`，值取自 `.env.prod` 的 `MIGRATION_*`）跑 `datamigrate -mode validate`，只驗旗標與 plan 版本鏈，**不連資料庫、不帶 `MYSQL_DSN`**。`MIGRATION_TIMEOUT` 這類值寫錯、`MIGRATION_PLAN_DIR` 不是已存在的宿主機絕對路徑，都在這裡失敗，服務尚未停止；以前要到停服、備份、發布設定之後才失敗，造成停機加回滾。不帶 DSN 也避免旗標錯誤時 datamigrate 印出預設值（`-mysql` 預設取 `MYSQL_DSN`）而把含密碼的 DSN 寫進 CI log。`MYSQL_DSN` 現在也在關服前預檢：缺值、鍵名打錯或仍是 `change_me` 佔位值，`ci-deploy.sh` 在關服前就失敗並只印鍵名（不印值）。手動執行 `migrate-prod.sh` **不接受任何參數**（內層固定 `-mode apply -confirm`，帶 `-mode validate` 會被拒絕而不是預檢）；要預檢請直接呼叫 `datamigrate -mode validate`（見後端交接手冊）。
 
+### 升版前置檢查（移除舊戰鬥）
+
+d9cce87fb 起 World 啟動時會冪等 `DROP TABLE IF EXISTS` 六張舊戰鬥表：`combat_session`、`combat_player_snapshot`、`combat_settlement_notification`、`combat_gold_settlement`、`wallet_ledger`、`player_gold_adjustment`（僅限既有庫；新庫沒有這些表）。升版前務必確認：
+
+- World 落地目錄（spill）為空：舊落地檔內的戰鬥欄位重放時被丟棄並記 Error，不會補寫；先讓舊版 World 正常關閉並重放完。
+- `player_gold_adjustment` 沒有未套用的列：該表被 DROP 後待套用的金幣調整永久遺失。
+- DROP 不可還原，升版前先備份這六張表（若需追溯）。
+
+### 無主鍵表與 `sql_require_primary_key`
+
+`player_variable` 等三張表沒有主鍵，只有唯一索引，不會出現重複列；但 MySQL 開啟 `sql_require_primary_key=ON` 或使用 Group Replication（InnoDB Cluster）時，建表與寫入會被拒絕。部署目標若開了這些選項，需先評估或關閉；現況未支援。
+
 ### 連線池設定
 
 各服務的 MySQL 連線池採用以下預設值，可透過設定檔覆寫：
@@ -318,7 +311,7 @@ WHERE claimed_at IS NULL AND (reward_lottery_id < 0 OR reward_choice_lottery_id 
 |------|-------------|-------------|----------------|----------------|---------|
 | Central、Chat、World、Record（全部） | 25（`mysql.max_open_conns`） | 同 MaxOpenConns（未設定時等於開啟上限，`mysql.max_idle_conns`；World 設定檔明設 40） | 1h | 10m | 各服務經 `dbstartup.MySQLConfig` 讀設定檔的 `mysql.max_open_conns`／`mysql.max_idle_conns`，交給 `pkg/mysql`（Central、Chat、World 走 `mysql.Open`，Record 走 `mysql.Connect`） |
 
-> `max_open_conns`／`max_idle_conns` 設 0 時用預設值，負數啟動即拒絕（閒置上限預設等於開啟上限，低於它時登入尖峰用完的連線會被反覆關閉再重建）；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。服務連線另把 session 的 `innodb_lock_wait_timeout` 設為 4 秒（`lockWaitTimeoutSeconds`；MySQL 預設 50 秒），刻意短於 World 玩家寫回期限 5 秒：客戶端 ctx 逾時只關 TCP，伺服器端等鎖的語句會等到這個上限才回滾，等鎖超過時先以 Error 1205 結束（不觸發斷路器），而不是由客戶端先逾時被算成資料庫故障。經 `mysql.OpenDSN` 開的連線同樣套用這個上限（`applyLockWaitAndDialTimeout`）。
+> `max_open_conns`／`max_idle_conns` 設 0 時用預設值，負數啟動即拒絕（閒置上限預設等於開啟上限，低於它時登入尖峰用完的連線會被反覆關閉再重建）；`ConnMaxLifetime` 與 `ConnMaxIdleTime` 固定，不可設定。連線一律 `interpolateParams=true`、不使用 GORM `PrepareStmt`（見[開發規則](./開發規則.md)）。服務連線另把 session 的 `innodb_lock_wait_timeout` 設為 4 秒（`pkg/mysql.LockWaitTimeout`；MySQL 預設 50 秒），刻意短於 World 玩家寫回期限 5 秒：客戶端 ctx 逾時只關 TCP，伺服器端等鎖的語句會等到這個上限才回滾，等鎖超過時先以 Error 1205 結束（不觸發斷路器），而不是由客戶端先逾時被算成資料庫故障。經 `mysql.OpenDSN` 開的連線同樣套用這個上限（`applyLockWaitAndDialTimeout`）。
 
 ## 2. 建 image
 
@@ -500,7 +493,7 @@ release / version 流程請參考 [[Docker發版流程]]。
 
 ## 第十九輪補充（2026-10-23）
 
-- combat 快照寫入（`combatstore/snapshot.go`）改用 `INSERT ... VALUES ... AS new ON DUPLICATE KEY UPDATE`，需要 MySQL 8.0.19 以上（正式環境已釘 8.4）。第三十輪起所有 GORM upsert（`clause.OnConflict` 的 `DoUpdates`／`UpdateAll`）都由 `pkg/mysql` 的 dialect（`upsert_alias.go`）統一編成列別名語法（`... AS new ON DUPLICATE KEY UPDATE col = new.col`），因此整個服務都需要 MySQL 8.0.19 以上；`TestSavePlayerChangesRaisesNoMySQLWarnings` 守門寫回不產生 MySQL warning（`warning_count` 為 0）。升級資料庫版本前先確認。
+- 原 combat 快照寫入已刪； `INSERT ... VALUES ... AS new ON DUPLICATE KEY UPDATE`，需要 MySQL 8.0.19 以上（正式環境已釘 8.4）。第三十輪起所有 GORM upsert（`clause.OnConflict` 的 `DoUpdates`／`UpdateAll`）都由 `pkg/mysql` 的 dialect（`upsert_alias.go`）統一編成列別名語法（`... AS new ON DUPLICATE KEY UPDATE col = new.col`），因此整個服務都需要 MySQL 8.0.19 以上；`TestSavePlayerChangesRaisesNoMySQLWarnings` 守門寫回不產生 MySQL warning（`warning_count` 為 0）。升級資料庫版本前先確認。
 - `game_board_command_total{result="aborted"}` 為關機中止的盤面指令，不計入 error；`world minute audit panic recovered`、`gate audit panic recovered` 為稽核專屬 panic 標籤（`game_panic_recovered_total`）。
 - Lobby admin／gm 的封禁日誌與 Central 啟動掃描未正規化帳號的日誌，帳號改記 `accountHash`（`accountrule.LogHash`，兩邊共用）；其餘日誌不記帳號。查帳號要先算雜湊。
 - Gate、Chat、Record 的必要依賴（Redis、歷史／事件 store）缺少時啟動失敗；Gate `/diag/session`、`/diag/player`、`/diag/reconcile` 走 basic auth（`/diag/protocol` 不受保護）；第三十輪起 pprof 與 `/diag/*` 的 basic auth 失敗以來源為單位限流，連錯 5 次後回 429、之後每 12 秒回復一次嘗試機會（與 Lobby admin 共用 `httpx.AuthLimiter`）。
