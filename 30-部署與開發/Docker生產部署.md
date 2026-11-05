@@ -125,7 +125,7 @@ AUTO_MIGRATE_DISABLED=true
 
 - `Central` → `user` 表（模型 `store.UserRecord`）
 - `Chat` → `chat_message` 表
-- `World` → `gamestore.Models()` 的全部資料表（玩家、背包、盤面、任務、record outbox 等）（舊戰鬥表 `combat_session` 等六張由 World 啟動時自動 DROP，見「升版前置檢查」）
+- `World` → `gamestore.Models()` 的全部資料表（玩家、背包、盤面、任務、record outbox 等）（舊戰鬥表 `combat_session` 等六張僅在 AutoMigrate 開啟時由 World 啟動自動 DROP；`AUTO_MIGRATE_DISABLED=true` 的正式環境不會 DROP，World 啟動偵測到殘表只記 Warn 並附 DROP 語句，須手動或走 migration，見「升版前置檢查」）
 
 關閉 AutoMigrate 時，`pkg/mysql` 的 `Open` 仍會確認必要資料表存在（`requireTables`），查詢帶 10 秒逾時；資料庫無回應時啟動不再無限卡住，缺表則啟動失敗。資料表都在之後，再以各 model 宣告的索引比對 `information_schema.statistics`（第十一輪 DB-L2）：缺少的索引（含 model 以 `gorm:"unique"` 宣告的唯一約束，MySQL 以同名唯一索引呈現）記一行 Warn `AUTO_MIGRATE_DISABLED=true but indexes are missing or mismatched; create or fix them per the production deploy doc (Docker生產部署.md)`（缺少的放欄位 `missing`，格式 `table.index`；索引存在但欄位順序或唯一性與 model 宣告不符的放欄位 `mismatch`，格式 `table.index: want (a,b), got (b,a)`），每日帳號清除（`runPurge`）依賴的索引欄位不符時同樣跳過該作業並回未匯出的 `missingIndexError`（原 `MissingIndexError`），查詢失敗記 Warn `database index check failed`；兩者都**不擋啟動、不修改 schema**。缺欄位會立刻報錯，缺索引只會在資料量大時退化成全表掃描並拉長持鎖，升級後務必搜這行 Warn，照下節補建。
 
@@ -293,11 +293,18 @@ WHERE claimed_at IS NULL AND (reward_lottery_id < 0 OR reward_choice_lottery_id 
 
 ### 升版前置檢查（移除舊戰鬥）
 
-d9cce87fb 起 World 啟動時會冪等 `DROP TABLE IF EXISTS` 六張舊戰鬥表：`combat_session`、`combat_player_snapshot`、`combat_settlement_notification`、`combat_gold_settlement`、`wallet_ledger`、`player_gold_adjustment`（僅限既有庫；新庫沒有這些表）。升版前務必確認：
+d9cce87fb 起 World 在 **AutoMigrate 開啟時**啟動會冪等 `DROP TABLE IF EXISTS` 六張舊戰鬥表（`AUTO_MIGRATE_DISABLED=true` 的正式環境不會自動 DROP，World 啟動偵測到殘表只記 Warn 並附下列 DROP 語句，須在維護時段手動執行或走 migration）：`combat_session`、`combat_player_snapshot`、`combat_settlement_notification`、`combat_gold_settlement`、`wallet_ledger`、`player_gold_adjustment`（僅限既有庫；新庫沒有這些表）。升版前務必確認：
 
 - World 落地目錄（spill）為空：舊落地檔內的戰鬥欄位重放時被丟棄並記 Error，不會補寫；先讓舊版 World 正常關閉並重放完。
-- `player_gold_adjustment` 沒有未套用的列：該表被 DROP 後待套用的金幣調整永久遺失。
+- `player_gold_adjustment` 沒有未套用的列：該表被 DROP 後待套用的金幣調整永久遺失。；World 在 DROP `player_gold_adjustment` 前會清點未套用列，**有未套用列就拒絕啟動**（錯誤訊息帶表名與筆數），須先處理完（套用或確認作廢）才能升版。
 - DROP 不可還原，升版前先備份這六張表（若需追溯）。
+
+```sql
+-- 手動 DROP（AutoMigrate 關閉的正式環境；先確認 player_gold_adjustment 無未套用列）
+DROP TABLE IF EXISTS `combat_session`, `combat_player_snapshot`, `combat_settlement_notification`, `combat_gold_settlement`, `wallet_ledger`, `player_gold_adjustment`;
+```
+
+- Redis 殘留鍵 `combat:eligible-player` 已不再使用，升版前執行 `DEL combat:eligible-player`（Set，無 TTL，不清會永久殘留）；暫存鍵 `combat:eligible-player:rebuild:*` 有 TTL 會自行清除。
 
 ### 無主鍵表與 `sql_require_primary_key`
 

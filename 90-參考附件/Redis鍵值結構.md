@@ -53,13 +53,6 @@ Gate、Central、World 每輪公告前先跑就緒檢查（`lobbyreporter.New` �
 | `central:world:drain` | Set | Lobby (admin) | 排空期間 | 排空中的 World ID 集合 |
 | `central:audit:record:{playerID}` | Hash | Central | 10 分鐘（`auditRecordCacheTTL`） | audit 快取記錄：欄位 `account`、`worldID`、`hash`（passwordHash）；用 `HGETALL` 查，`GET` 會得到 WRONGTYPE |
 
-## `combat:*` — PvP 候選索引（combatstore）
-
-| Key 模式 | 類型 | Owner | TTL | 用途 |
-|----------|------|-------|-----|------|
-| `combat:eligible-player` | Set | World（所有 World 共用） | 無 | 可配對玩家 ID 候選集合；Redis 重啟或 `FLUSHALL` 後由玩家操作時重寫補回，或重啟 World 觸發重建 |
-| `combat:eligible-player:rebuild:{nanoBase36}` | Set | World | 1 小時 | 重建時先寫入的專屬暫存 key，完成後以 Lua 原子換上正式集合；正常不會殘留，崩潰時殘留靠 TTL 自行清除 |
-
 ## `requestjournal:*` — 請求去重快取
 
 | Key 模式 | 類型 | Owner | TTL | 用途 |
