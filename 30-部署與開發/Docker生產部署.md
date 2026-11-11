@@ -150,7 +150,7 @@ ALTER TABLE `player_board_building` DROP FOREIGN KEY `<約束名>`;
 
 `AUTO_MIGRATE_DISABLED=true` 時 `AutoMigrate` 不會執行，下列結構變更需在升級前由外部 migration 建立（PJA-Database 尚無 plan，`deps/PJA-Database/migrations/` 只有 README，暫以 SQL 手動執行）。
 
-基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：新表（`player_gold_adjustment` 等，缺表時 `requireTables` 會直接讓啟動失敗）、舊戰鬥相關表（`combat_*`、`wallet_ledger`）：已隨舊戰鬥實作刪除，World 啟動時 DROP。2026-10-05 `bd968ff43` 起整數欄位由無號改有號**不在此列：AutoMigrate 不改有號／無號，必須執行下方「整數欄位由無號改有號」的 SQL**。
+基準點與涵蓋範圍：以 develop `5d6cef1ed`（2026-10-01）時由 AutoMigrate 建立的庫為起點，比對到第十二輪（`0f40a7fc5`）各 model 的 `gorm` tag。SQL 依 model tag 與 `gorm.io/driver/mysql` 的預設型別對應推導（`bool` → `boolean`、`*time.Time` → 可為 NULL 的 `datetime(3)`、未指定 priority 的複合索引依欄位宣告順序），未在 MySQL 實機以 `SHOW CREATE TABLE` 比對過；執行前先在複本確認。清單**不涵蓋**下列變更；庫若早於這些變更，請在維護時段先執行本節的改名／刪除 SQL，再以 `AUTO_MIGRATE_DISABLED=false` 啟動一次讓 AutoMigrate 補齊：舊戰鬥相關表（`combat_*`、`wallet_ledger`、`player_gold_adjustment`）：已隨舊戰鬥實作刪除，不會再被 `requireTables` 要求；只在 AutoMigrate 開啟且殘表存在時 World 才會送 DROP，關閉時只記 Warn 並印出 DROP 語句（見「升版前置檢查」）。2026-10-05 `bd968ff43` 起整數欄位由無號改有號**不在此列：AutoMigrate 不改有號／無號，必須執行下方「整數欄位由無號改有號」的 SQL**。
 
 ```sql
 -- Chat：歷史保留清理依 created_at 掃描
@@ -295,8 +295,8 @@ WHERE claimed_at IS NULL AND (reward_lottery_id < 0 OR reward_choice_lottery_id 
 
 d9cce87fb 起 World 在 **AutoMigrate 開啟時**啟動會冪等 `DROP TABLE IF EXISTS` 六張舊戰鬥表（`AUTO_MIGRATE_DISABLED=true` 的正式環境不會自動 DROP，World 啟動偵測到殘表只記 Warn 並附下列 DROP 語句，須在維護時段手動執行或走 migration）：`combat_session`、`combat_player_snapshot`、`combat_settlement_notification`、`combat_gold_settlement`、`wallet_ledger`、`player_gold_adjustment`（僅限既有庫；新庫沒有這些表）。升版前務必確認：
 
-- World 落地目錄（spill）為空：舊落地檔內的戰鬥欄位重放時被丟棄並記 Error，不會補寫；先讓舊版 World 正常關閉並重放完。
-- `player_gold_adjustment` 沒有未套用的列：該表被 DROP 後待套用的金幣調整永久遺失。；World 在 DROP `player_gold_adjustment` 前會清點未套用列，**有未套用列就拒絕啟動**（錯誤訊息帶表名與筆數），須先處理完（套用或確認作廢）才能升版。
+- World 落地目錄（`game_store.spill_dir`）**必須為空**：舊落地檔內的戰鬥欄位重放時被丟棄並記 Error，不會補寫，且不再提供落地檔舊欄位名相容碼；先讓舊版 World 正常關閉並重放完，再確認 `rejected/` 以外沒有殘檔。
+- `player_gold_adjustment` 沒有未套用的列：該表被 DROP 後待套用的金幣調整永久遺失。World 在 DROP `player_gold_adjustment` 前會清點未套用列，**有未套用列就拒絕啟動**（錯誤訊息帶表名與筆數），須先處理完（匯出或確認作廢）才能升版：先 `SELECT * FROM player_gold_adjustment` 匯出留存，確認作廢後 `DELETE FROM player_gold_adjustment`，再重啟 World。
 - DROP 不可還原，升版前先備份這六張表（若需追溯）。
 
 ```sql
