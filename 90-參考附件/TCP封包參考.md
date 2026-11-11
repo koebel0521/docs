@@ -167,7 +167,7 @@ type ServiceHandler interface {
 tcpruntime.AddMsgHandler(svc, system.NewHelloRequest, r.onHelloRequest)
 ```
 
-`AddMsgHandler[T]` 包裝型別斷言後呼叫 `OwnerBase.AddNewMsg`。同一 ID 重複註冊只保留第一個並記錄錯誤。owner 為 S2S owner（已驗證，或建構時沒有標 `WithUntrustedPeer`；與是否開啟 `s2s_auth` 無關，開發環境與正式環境語意一致，只有面向玩家的 owner 例外）時，handler 在註冊時包上 `guardSerialized`：連線 context 已取消或該 socket 已不在 owner 的連線集合中（例如被同節點新連線取代）時，訊息直接略過。
+`AddMsgHandler[T]` 包裝型別斷言後呼叫 `OwnerBase.AddNewMsg`；訊息型別與註冊的 `T` 不符時 panic（不再靜默略過），由 tcpsocket 派發端 recover 並記錄 stack，計 `game_panic_recovered_total{msg="tcp handler"}`。同一 ID 重複註冊只保留第一個並記錄錯誤。owner 為 S2S owner（已驗證，或建構時沒有標 `WithUntrustedPeer`；與是否開啟 `s2s_auth` 無關，開發環境與正式環境語意一致，只有面向玩家的 owner 例外）時，handler 在註冊時包上 `guardSerialized`：連線 context 已取消或該 socket 已不在 owner 的連線集合中（例如被同節點新連線取代）時，訊息直接略過。
 
 ## 建構
 
@@ -349,11 +349,11 @@ S2S 連線建立後，`s2shandshake.ConnectInfoOnConnect.Connect` 依序送出�
 | `tcp_messages_sent_total`、`tcp_messages_received_total` | 收送訊息數 |
 | `tcp_send_queue_depth`、`tcp_send_queue_overflow_total` | socket 送出佇列深度（scrape 時加總各 socket 的 `len(sendCh)`，不再逐則 Inc/Dec）與溢位關閉次數 |
 | `tcp_unknown_messages_total` | 未註冊訊息 |
-| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄，以及 `loop_closed`（事件迴圈已停止後才收到的 S2S 訊息，不執行、歸還物件池並計數）；Gate 轉送另有 `world_mismatch`（World 回覆的 WorldID 與連線或玩家綁定不符）與 `unknown_player`（World 回應的玩家不在 Gate），Chat 另有 `invalid_room`（RoomID 無效的 `ChatJoin`）；World 盤面指令另有 `board_queue_full`（工作者佇列滿）與 `change_notify_queue_full`（資源變更通知排不進玩家分片）與 `unknown_player`（玩家不在本 World 或所屬 Gate 不符，同時有取樣 Warn）、`board_decode`（盤面／任務指令 payload 解碼失敗，以 `board.ErrDecode` 區分，記取樣 Warn 而非 Error） |
+| `tcp_dropped_messages_total{reason}` | S2S 的 `unpack`／`handler_panic` 丟棄，以及 `loop_closed`（事件迴圈已停止後才收到的 S2S 訊息，不執行、歸還物件池並計數）；Gate 轉送另有 `world_mismatch`（World 回覆的 WorldID 與連線或玩家綁定不符）與 `unknown_player`（World 回應的玩家不在 Gate），Chat 另有 `invalid_room`（RoomID 無效的 `ChatJoin`）；World 另有 `unknown_gate`（連線未登記 Gate 身分，卻送盤面指令或驗證訊息）與 `identity_mismatch`（驗證訊息自稱的身分與連線不符），Gate 另有 `chat_invalid_room`、`chat_invalid_payload`、`central_mismatch`，Chat 另有 `unknown_gate`；World 盤面指令另有 `board_queue_full`（工作者佇列滿）與 `change_notify_queue_full`（資源變更通知排不進玩家分片；兩者只計佇列滿，關機後的丟棄不計）與 `unknown_player`（玩家不在本 World 或所屬 Gate 不符，同時有取樣 Warn）、`board_decode`（盤面／任務指令 payload 解碼失敗，以 `board.ErrDecode` 區分，記取樣 Warn 而非 Error） |
 | `tcp_reconnect_attempts_total`、`tcp_reconnect_total{result}` | client dial 次數與成敗；`tcp_reconnect_success_percent_5m` 為錄製規則 |
 | `game_event_queue_overflow_total` | eventCh 滿 |
 | `game_msg_queue_dropped_total` | 目前只剩 Chat 房間工作佇列滿（`service="chat_room"`）；owner 廣播佇列已移除 |
-| `game_service_hello_mismatch_total` | 發版身分不一致、逾時未送 hello 或 hello 前送其他訊息 |
+| `game_service_hello_mismatch_total{reason}` | hello 被拒絕：`mismatch`（發版身分不一致）、`timeout`（逾時未送 hello）、`premature`（hello 前送其他訊息）；告警只看 `mismatch` |
 | `game_heartbeat_timeout_total` | 玩家心跳逾時 |
 
 ### 協定紀錄
