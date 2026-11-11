@@ -7,7 +7,7 @@
 在清掉壞資料後，快速把 volume 還原回來。
 
 ## 流程
-1. 沒有設 `CONFIRM_RESTORE=yes` 就拒絕執行。
+1. 沒有設 `CONFIRM_RESTORE=yes` 就拒絕執行；有應用服務執行時也拒絕並點名服務（覆寫旗標 `ALLOW_RUNNING_SERVICES=1`）。
 2. 確認 tar.gz 能完整讀出且不是空包。
 3. 先把目前的 Redis 備份到 `PRE_RESTORE_BACKUP_DIR`（預設 `~/pja-backups/redis-pre-restore`），可用 `SKIP_PRE_RESTORE_BACKUP=1` 略過；Redis 未啟動時這步備份失敗，整個還原中止。
 4. 停掉 Redis。
@@ -20,7 +20,7 @@ volume 內已有上次失敗留下的 `.restore-old` 時腳本會拒絕繼續，
 
 ## 主要參數
 - 第一個位置參數：`redis-backup.tar.gz`
-- 透過環境變數控制：`ENV_FILE`、`COMPOSE_FILE`、`VOLUME_NAME`、`CONFIRM_RESTORE`（必須為 `yes`）、`PRE_RESTORE_BACKUP_DIR`、`SKIP_PRE_RESTORE_BACKUP`
+- 透過環境變數控制：`ENV_FILE`、`COMPOSE_FILE`、`VOLUME_NAME`、`CONFIRM_RESTORE`（必須為 `yes`）、`PRE_RESTORE_BACKUP_DIR`、`SKIP_PRE_RESTORE_BACKUP`、`ALLOW_RUNNING_SERVICES`（設 `1` 才在服務執行中還原）
 
 ## 相關文件
 - [Docker備份Redis](./Docker備份Redis.md)

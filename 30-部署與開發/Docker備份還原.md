@@ -41,6 +41,8 @@ ENV_FILE=.env.prod BACKUP_DIR=/srv/backups/mysql ./scripts/docker-backup-mysql.s
 CONFIRM_RESTORE=yes ./scripts/docker-restore-mysql.sh ~/pja-backups/mysql/mysql-20260324-120000.sql.gz
 ```
 
+MySQL 還原腳本在有應用服務（Central、World、Chat、Record 等）執行時會拒絕還原並點名正在執行的服務，請先停服；確定要在服務執行中還原時才設 `ALLOW_RUNNING_SERVICES=1` 覆寫。
+
 或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
 ```powershell
@@ -70,6 +72,8 @@ powershell -ExecutionPolicy Bypass -File ./scripts/private/p0-daily-check.ps1 -M
 ```bash
 CONFIRM_RESTORE=yes ./scripts/docker-restore-redis.sh ~/pja-backups/redis/redis-20260324-120000.tar.gz
 ```
+
+Redis 還原腳本同樣在有應用服務執行時拒絕並點名服務，覆寫旗標同為 `ALLOW_RUNNING_SERVICES=1`。
 
 或直接走維護者本機的統一入口（`scripts/private/` 不進版控，其他人以上面的公開腳本為準）：
 
