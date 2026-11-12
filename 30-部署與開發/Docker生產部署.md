@@ -164,6 +164,11 @@ DROP INDEX idx_chat_message_room_message ON chat_message;
 -- World：寫回重試去重以 (player_id, seed) 鎖定讀抽獎紀錄（cbd65fa66，2026-10-07）
 CREATE INDEX ix_player_lottery_draw_player_seed ON player_lottery_draw (player_id, seed);
 
+-- World：抽獎去重改以唯一鍵＋INSERT … ON DUPLICATE KEY UPDATE，單次往返寫回才能錄製（c48cbb1fe，2026-11-12）。
+-- 部署新版 World 前先執行；先確認沒有重複種子（有重複則 ADD UNIQUE 失敗，需先清理），否則重試寫回會重複留紀錄。
+-- SELECT COUNT(*) FROM (SELECT 1 FROM player_lottery_draw GROUP BY player_id, seed HAVING COUNT(*) > 1) d;
+ALTER TABLE player_lottery_draw DROP INDEX ix_player_lottery_draw_player_seed, ADD UNIQUE INDEX ux_player_lottery_draw_player_seed (player_id, seed);
+
 -- Central：user 主鍵欄位 user_id 改名為 player_id（c93cf2a7f，2026-10-03；MySQL 8.0 起支援 RENAME COLUMN，主鍵隨欄位保留）。
 -- 必須在新版 Central 以 AutoMigrate 啟動前執行，AutoMigrate 不會改名，只會嘗試另外新增 player_id 欄位。
 ALTER TABLE `user` RENAME COLUMN user_id TO player_id;
@@ -214,7 +219,7 @@ DROP INDEX idx_record_outbox_event_next_attempt_at ON record_outbox_event;
 DROP INDEX idx_record_outbox_event_lease_until ON record_outbox_event;
 -- World：player_lottery_entry_state 的 group_id 單欄索引（主鍵 (player_id, group_id, sub_id) 已涵蓋 player_id 前綴）
 DROP INDEX ix_player_lottery_entry_state_player_group ON player_lottery_entry_state;
--- World：player_lottery_draw 的 (player_id, created_at) 索引（唯一查詢走 ix_player_lottery_draw_player_seed）
+-- World：player_lottery_draw 的 (player_id, created_at) 索引（唯一查詢走 ux_player_lottery_draw_player_seed）
 DROP INDEX ix_player_lottery_draw_player_created ON player_lottery_draw;
 -- World：gm_grant_record 的 player_id 單欄索引（唯一查詢以主鍵 operation_id）；名稱先 SHOW INDEX FROM gm_grant_record 核對
 DROP INDEX idx_gm_grant_record_player_id ON gm_grant_record;
