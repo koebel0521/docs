@@ -154,7 +154,7 @@ gcloud compute instances start pja-game-1 --zone=asia-east1-b --project=plinkopo
 | World image | `project-world:1.0.6-group` |
 | 各服務 `cpus` | World 4.0、Gate 2.0、Central 1.5，其餘 1.0 |
 | `mysql.flush_concurrency`／`max_open_conns`／`max_idle_conns` | 32／80／80（Cloud SQL 8 vCPU） |
-| `mysql.flush_group_size` | 8（預設） |
+| `mysql.flush_group_size` | 1（關閉合併；repo 已改，VM 上的 `world.yaml` 下次發版時同步） |
 | `gate.session.max_logged_in_per_ip` | 50（上線後看 `tcp_rejected_connections_total{reason="logged_in_per_ip"}` 再調） |
 
 ## 8. 壓測前後的暫時調整
