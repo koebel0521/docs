@@ -75,6 +75,8 @@ World 啟動時要求 `current.json`，正式環境不得開啟 `data_config.all
 .\scripts\publish-data-config.ps1 -Source config\data -Root <DATA_CONFIG_ROOT>
 ```
 
+**換 World 版本時 release 一定要用新版本的程式重發**：release 的 `checksums.json` 記錄 `schema_hash`（由編進 World 的 `pkg/dataconfig/generated/*.go` 算出），與新版 World 不符時啟動會報 `dataconfig: config schema is not supported`，而且 release 不可變、重試也不會成功。症狀出現在遊戲設定資料沒變、只有 generated 程式碼換版（例如升級子模組）的部署；解法是用新版原始碼執行上面的發布指令。同名 `config_version` 的 release 要先備份舊目錄再取代（回滾到舊 image 時要換回舊 release）。2026-11-12 的 GCP 部署就遇到這個情況。
+
 World 唯讀掛載並監看此目錄，熱重載只採用白名單內的變更，不改寫 `current.json`。熱重載被拒時 World 保留目前快照並記錄 `data_config_reload_total{result="rejected"}`，但 `current.json` 仍指向被拒的版本，World 重啟會改載入該版本（若該版本的 `client_contract`、`min_config_seq`、`config_version`、`config_seq` 與映像內嵌的 `release.json` 不符，World 會拒絕啟動）；先以 `rollback-data-config-release.ps1` 切回可用版本，或依[配置 Artifact 發布與回退](配置Artifact發布與回退.md)完成需要重啟的變更。
 
 ### 機密與對外連接埠
