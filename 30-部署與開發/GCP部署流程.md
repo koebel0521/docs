@@ -145,6 +145,33 @@ gcloud compute instances start pja-game-1 --zone=asia-east1-b --project=plinkopo
 ```
 
 - 停機後仍收費：磁碟、Cloud SQL 儲存、固定外部 IP（閒置時計費，金額小）。
+- Cloud SQL 停機時只能改啟用狀態與刪除保護，其他設定（含備份）會被拒絕（`HTTP 400`）；要改設定得連同 `--activation-policy=ALWAYS` 一起送出。
+- 停機期間每日自動備份不會執行。
+
+### 備份設定（2026-11-13 查證與調整）
+
+| 項目 | 值 |
+|---|---|
+| 自動備份 | 啟用，每日 19:00 UTC（台灣 03:00） |
+| 備份保留 | 最近 14 份 |
+| 時間點還原（PITR） | 啟用（binlog），交易日誌保留 7 天，存 Cloud Storage |
+| 刪除保護 | 啟用 |
+| 可用性 | 單區（`ZONAL`），無高可用、無異地副本 |
+
+調整指令（實例執行中才可改）：
+
+```bash
+gcloud sql instances patch pja-mysql --project=plinkopoly --retained-transaction-log-days=7 --retained-backups-count=14
+```
+
+查詢：
+
+```bash
+gcloud sql instances describe pja-mysql --project=plinkopoly --format="yaml(settings.backupConfiguration)"
+gcloud sql backups list --instance=pja-mysql --project=plinkopoly
+```
+
+仍待補：還原演練（還原到暫時實例並量測時間）、長期保留（每週或每月備份）、異地副本、上線前評估高可用。專案的 `scripts/docker-backup-mysql.sh` 只用於 compose 內的 MySQL 容器，不適用 Cloud SQL。
 - 升降資料庫規格：`gcloud sql instances patch pja-mysql --tier=db-custom-8-32768`（會重啟）。降到 4 vCPU 前先把 `mysql.flush_concurrency` 調回 16、`max_open_conns` 調回 40，否則資料庫 CPU 會頂滿。
 
 ## 7. 正式設定現況
