@@ -183,7 +183,11 @@ gcloud sql backups list --instance=pja-mysql --project=plinkopoly
 3. 上傳到 `gs://plinkopoly-pja-backups/mysql/daily/`（區域 asia-east1，禁止公開、統一桶層級權限；生命週期規則 30 天後刪除）；VM 服務帳號對該桶有 `objectAdmin`。
 4. 成功後寫 `/srv/pja/backups/mysql/.last-success`；每次執行的輸出在 `/srv/pja/backups/backup.log`，失敗時腳本非零結束。
 
-另有 GCP 磁碟快照排程 `pja-daily`（每天 19:00 UTC，保留 7 天）掛在 VM 開機碟上，資料卷在同一顆碟，等於整機備份。快照只是當機一致，不取代邏輯備份。
+MySQL 資料目錄在獨立的 100GB SSD 持久碟 `pja-mysql-data`（掛在 `/srv/pja/mysql-data`，由 `docker/compose/compose.localdisk.yml` 以 bind 卷掛進容器）。**不要把資料放在 pd-standard 開機碟**：2026-11-13 第一次本機資料庫壓測就因此失敗（寫入 IOPS 太低，寫回逾時、斷路器開啟，5000 人寫回只剩約 10 位／秒、失敗計數 86 萬）；換 SSD 碟後同樣負載 0 失敗。
+
+另有 GCP 磁碟快照排程 `pja-daily`（每天 19:00 UTC，保留 7 天）同時掛在開機碟與資料碟 `pja-mysql-data` 上，等於整機備份。快照只是當機一致，不取代邏輯備份。
+
+本機資料庫壓測結果（2026-11-13，e2-standard-8 全部同機、MySQL 容器預設 `innodb-buffer-pool-size=256M`、`flush_concurrency` 16、連線池 40）：5000 人登入 0 失敗；擲骰 p50 約 10 毫秒、p99 約 75 毫秒（Cloud SQL 8 vCPU 時約 3／50 毫秒）；寫回約 320 位／秒、每輪髒玩家平均約 1400、寫回失敗 0；MySQL 約 2.5 核、World 約 2.0 核、Gate 約 0.64 核，主機 load 約 6／8。機器人的操作頻率遠高於真人，真實玩家的寫回負載會低很多；要往上加人，先調大 `innodb-buffer-pool-size`（VM 有 32GB 記憶體）再重測。
 
 2026-11-13 實測（還原演練）：寫入 5000 筆探測資料 → 備份 → 上傳 → 從 GCS 下載（雜湊與本機相同）→ 還原到暫時資料庫：筆數 5000、校驗碼、64 張表全部一致，測完已清理。
 
