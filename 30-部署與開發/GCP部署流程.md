@@ -8,7 +8,7 @@
 |---|---|
 | 專案／區域 | `plinkopoly`、asia-east1-b |
 | 應用 VM | `pja-game-1`，e2-standard-8，Ubuntu 24.04，使用者 `User`，固定外部 IP `pja-game-ip`（34.81.192.196） |
-| 資料庫 | Cloud SQL `pja-mysql`，MySQL 8.4，單區、100GB SSD、自動備份＋PITR、刪除保護；規格 `db-custom-8-32768`（可降為 `db-custom-4-16384`） |
+| 資料庫 | 現行：VM 上 compose 的 `mysql` 容器（見「本機 MySQL 與每日備份」）；Cloud SQL `pja-mysql`（MySQL 8.4，單區、100GB SSD、自動備份＋PITR、刪除保護，規格 `db-custom-8-32768`）已停機保留 |
 | 資料庫連線 | Private Service Connect，端點 `pja-sql-psc`，私網 IP `10.140.0.7`（VPC 對等在此專案連不起來） |
 | Image Registry | `asia-east1-docker.pkg.dev/plinkopoly/pja`，image 名稱 `project-<服務>:<tag>` |
 | 同機服務 | Central、World、Gate、Record、Redis、RabbitMQ、Prometheus、Alertmanager、Grafana（docker compose） |
@@ -172,6 +172,27 @@ gcloud sql backups list --instance=pja-mysql --project=plinkopoly
 ```
 
 仍待補：還原演練（還原到暫時實例並量測時間）、長期保留（每週或每月備份）、異地副本、上線前評估高可用。專案的 `scripts/docker-backup-mysql.sh` 只用於 compose 內的 MySQL 容器，不適用 Cloud SQL。
+### 本機 MySQL 與每日備份（2026-11-13 起現行做法）
+
+資料庫改在 VM 上用 compose 的 `mysql` 容器跑（資料卷 `project-prod_prod-mysql-data`），Cloud SQL `pja-mysql` 已停機保留（見上）。VM 的 `compose.sh` 不再帶 `compose.cloudsql.yml`，原版留在 `compose.sh.cloudsql`；要改回 Cloud SQL 就換回它並啟動實例。
+
+每日備份流程（`/srv/pja/backup-daily.sh`，VM 使用者 crontab，每天 04:00 UTC＝台灣 12:00）：
+
+1. `scripts/docker-backup-mysql.sh` 用 `mysqldump --single-transaction` 匯出成 `/srv/pja/backups/mysql/mysql-<時間>.sql.gz`，保留最近 14 份。
+2. `gzip -t` 驗證壓縮檔、檔案小於 1KB 視為失敗。
+3. 上傳到 `gs://plinkopoly-pja-backups/mysql/daily/`（區域 asia-east1，禁止公開、統一桶層級權限；生命週期規則 30 天後刪除）；VM 服務帳號對該桶有 `objectAdmin`。
+4. 成功後寫 `/srv/pja/backups/mysql/.last-success`；每次執行的輸出在 `/srv/pja/backups/backup.log`，失敗時腳本非零結束。
+
+另有 GCP 磁碟快照排程 `pja-daily`（每天 19:00 UTC，保留 7 天）掛在 VM 開機碟上，資料卷在同一顆碟，等於整機備份。快照只是當機一致，不取代邏輯備份。
+
+2026-11-13 實測（還原演練）：寫入 5000 筆探測資料 → 備份 → 上傳 → 從 GCS 下載（雜湊與本機相同）→ 還原到暫時資料庫：筆數 5000、校驗碼、64 張表全部一致，測完已清理。
+
+限制與待補：
+- 時間點還原：MySQL 8.4 預設開 binlog（本機保留 30 天），但沒有同步到 GCS；VM 與磁碟一起壞掉時只能回到最近一次每日備份。
+- 沒有備份失敗告警（只有 `.last-success` 時間戳與日誌）；可用它超過 26 小時沒更新當告警條件。
+- 單機單磁碟：每日備份是唯一的異地副本，要定期（每月）實際還原一次。
+- 手動即時備份：`/srv/pja/backup-daily.sh`；還原用 `scripts/docker-restore-mysql.sh`（會覆蓋正式庫，先停應用）。
+
 - 升降資料庫規格：`gcloud sql instances patch pja-mysql --tier=db-custom-8-32768`（會重啟）。降到 4 vCPU 前先把 `mysql.flush_concurrency` 調回 16、`max_open_conns` 調回 40，否則資料庫 CPU 會頂滿。
 
 ## 7. 正式設定現況
