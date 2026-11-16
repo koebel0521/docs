@@ -185,6 +185,12 @@ gcloud sql backups list --instance=pja-mysql --project=plinkopoly
 
 MySQL 資料目錄在獨立的 100GB SSD 持久碟 `pja-mysql-data`（掛在 `/srv/pja/mysql-data`，由 VM 上的覆蓋檔 `compose.localdisk.yml`（不在 repo）以 bind 卷掛進容器）。**不要把資料放在 pd-standard 開機碟**：2026-11-13 第一次本機資料庫壓測就因此失敗（寫入 IOPS 太低，寫回逾時、斷路器開啟，5000 人寫回只剩約 10 位／秒、失敗計數 86 萬）；換 SSD 碟後同樣負載 0 失敗。
 
+binlog 保留與上傳（2026-11-16 起）：
+- 本機 `binlog_expire_logs_seconds=259200`（3 天，`SET PERSIST`，重啟後仍有效）。
+- `/srv/pja/binlog-ship.sh`（VM crontab，每天 04:30 UTC，接在每日備份之後）先 `FLUSH BINARY LOGS`，再把已關閉的 binlog 以 gzip 上傳到 `gs://plinkopoly-pja-backups/mysql/binlog/binlog.NNNNNN.gz`；已上傳的檔案略過，可重複執行。成功後寫 `/srv/pja/backups/mysql/.last-binlog-success`。
+- 時間點還原：還原最近一次每日備份，再依序 `gunzip -c` 後以 `mysqlbinlog --stop-datetime=… | mysql` 重放備份時間之後的 binlog。尚未實際演練。
+- 缺口：只上傳已關閉的檔，最壞丟失約 24 小時；要縮小就把 cron 改成每小時。上傳檔跟著桶的 30 天生命週期刪除。
+
 另有 GCP 磁碟快照排程 `pja-daily`（每天 19:00 UTC，保留 7 天）同時掛在開機碟與資料碟 `pja-mysql-data` 上，等於整機備份。快照只是當機一致，不取代邏輯備份。
 
 本機資料庫壓測結果（2026-11-13，e2-standard-8 全部同機、MySQL 容器預設 `innodb-buffer-pool-size=256M`、`flush_concurrency` 16、連線池 40）：5000 人登入 0 失敗；擲骰 p50 約 10 毫秒、p99 約 75 毫秒（Cloud SQL 8 vCPU 時約 3／50 毫秒）；寫回約 320 位／秒、每輪髒玩家平均約 1400、寫回失敗 0；MySQL 約 2.5 核、World 約 2.0 核、Gate 約 0.64 核，主機 load 約 6／8。機器人的操作頻率遠高於真人，真實玩家的寫回負載會低很多。
@@ -219,7 +225,7 @@ MySQL 資料目錄在獨立的 100GB SSD 持久碟 `pja-mysql-data`（掛在 `/s
 | 錯誤日誌 | World 只有 `gorm slow query`（約 750 筆，發生時段沒有逐一確認）與見下的 `gorm query failed`；Central 有新帳號限速與審計慢查詢（登入階段） |
 
 發現與待辦：
-- **MySQL binlog 長得非常快**：5000 人持續寫入時約 16 GB／小時（每個檔 1.1GB、4 分鐘一個），預設保留 30 天會在幾小時內塞滿 98GB 資料碟。壓測時暫時設 `binlog_expire_logs_seconds=1200`，測完已還原。正式環境真實寫入量遠低於機器人，但**仍須明確設定保留天數**（例如 3 天），並決定是否把 binlog 上傳 GCS 做時間點還原。
+- **MySQL binlog 長得非常快**：5000 人持續寫入時約 16 GB／小時（每個檔 1.1GB、4 分鐘一個），預設保留 30 天會在幾小時內塞滿 98GB 資料碟。壓測時暫時設 `binlog_expire_logs_seconds=1200`，測完已還原。正式環境真實寫入量遠低於機器人；現已明確設為保留 3 天並每日上傳 GCS（見上方「binlog 保留與上傳」）。
 - **資料量成長**：6 小時資料目錄從 6GB 長到 47GB，最大的表依序是 `player_mission_event`（約 26GB）、`player_lottery_draw`（約 7.5GB）、`record_outbox_event`（約 6.8GB）、`record_events_<日期>`（約 5.8GB）。機器人行為不等於真人，但這幾張表需要保留／清理策略與容量估算（尤其任務事件與 outbox）。
 - **`gorm query failed` 假警報**：World 日誌出現上千筆（已被取樣抑制），錯誤訊息是 `mysqlstore: save step is not recordable`。這是批次寫回遇到需要先讀取的步驟（移除星星要先 `SELECT player_board_road_star`）時刻意回傳的哨兵錯誤，呼叫端會退回逐句寫回，功能正常，但 GORM 日誌把它記成 warn。建議在 `pkg/mysql/gorm_logger.go` 的錯誤過濾忽略它（尚未修）。
 - **登入階段限速**：5000 人在約 10 分鐘內登入完（Central 新帳號限速、Gate 單 IP 限速），Central 記到 46 筆取樣的 `new user rate limited`，客戶端重試後全部成功。
@@ -229,7 +235,7 @@ MySQL 資料目錄在獨立的 100GB SSD 持久碟 `pja-mysql-data`（掛在 `/s
 2026-11-13 實測（還原演練）：寫入 5000 筆探測資料 → 備份 → 上傳 → 從 GCS 下載（雜湊與本機相同）→ 還原到暫時資料庫：筆數 5000、校驗碼、64 張表全部一致，測完已清理。
 
 限制與待補：
-- 時間點還原：MySQL 8.4 預設開 binlog（本機保留 30 天），但沒有同步到 GCS；VM 與磁碟一起壞掉時只能回到最近一次每日備份。
+- 時間點還原：binlog 每日上傳 GCS，VM 與磁碟一起壞掉時可回到上次上傳的時間點（最壞缺口約 24 小時）；還原流程尚未演練。
 - 沒有備份失敗告警（只有 `.last-success` 時間戳與日誌）；可用它超過 26 小時沒更新當告警條件。
 - 單機單磁碟：每日備份是唯一的異地副本，要定期（每月）實際還原一次。
 - 手動即時備份：`/srv/pja/backup-daily.sh`；還原用 `scripts/docker-restore-mysql.sh`（會覆蓋正式庫，先停應用）。
