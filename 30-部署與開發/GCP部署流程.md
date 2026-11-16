@@ -180,10 +180,10 @@ gcloud sql backups list --instance=pja-mysql --project=plinkopoly
 
 1. `scripts/docker-backup-mysql.sh` 用 `mysqldump --single-transaction` 匯出成 `/srv/pja/backups/mysql/mysql-<時間>.sql.gz`，保留最近 14 份。
 2. `gzip -t` 驗證壓縮檔、檔案小於 1KB 視為失敗。
-3. 上傳到 `gs://plinkopoly-pja-backups/mysql/daily/`（區域 asia-east1，禁止公開、統一桶層級權限；生命週期規則 30 天後刪除）；VM 服務帳號對該桶有 `objectAdmin`。
+3. 上傳到 `gs://plinkopoly-pja-backups/mysql/daily/`（區域 asia-east1，禁止公開、統一桶層級權限；生命週期規則 30 天後刪除）；VM 服務帳號對該桶有 objectAdmin 角色。
 4. 成功後寫 `/srv/pja/backups/mysql/.last-success`；每次執行的輸出在 `/srv/pja/backups/backup.log`，失敗時腳本非零結束。
 
-MySQL 資料目錄在獨立的 100GB SSD 持久碟 `pja-mysql-data`（掛在 `/srv/pja/mysql-data`，由 `docker/compose/compose.localdisk.yml` 以 bind 卷掛進容器）。**不要把資料放在 pd-standard 開機碟**：2026-11-13 第一次本機資料庫壓測就因此失敗（寫入 IOPS 太低，寫回逾時、斷路器開啟，5000 人寫回只剩約 10 位／秒、失敗計數 86 萬）；換 SSD 碟後同樣負載 0 失敗。
+MySQL 資料目錄在獨立的 100GB SSD 持久碟 `pja-mysql-data`（掛在 `/srv/pja/mysql-data`，由 VM 上的覆蓋檔 `compose.localdisk.yml`（不在 repo）以 bind 卷掛進容器）。**不要把資料放在 pd-standard 開機碟**：2026-11-13 第一次本機資料庫壓測就因此失敗（寫入 IOPS 太低，寫回逾時、斷路器開啟，5000 人寫回只剩約 10 位／秒、失敗計數 86 萬）；換 SSD 碟後同樣負載 0 失敗。
 
 另有 GCP 磁碟快照排程 `pja-daily`（每天 19:00 UTC，保留 7 天）同時掛在開機碟與資料碟 `pja-mysql-data` 上，等於整機備份。快照只是當機一致，不取代邏輯備份。
 
